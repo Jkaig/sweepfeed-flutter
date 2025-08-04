@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User Profiles
+    match /userProfiles/{userId} {
+      allow read: if request.auth.uid == userId;
+      allow create: if request.auth.uid != null;
+      allow update: if request.auth.uid == userId;
+    }
+
+    // Users
+    match /users/{userId} {
+        allow read, update: if request.auth.uid == userId;
+        allow write: if request.auth.uid == userId && (
+          request.resource.data.keys().hasAll(['fcmToken','notification_preferences']) &&
+          request.resource.data.notification_preferences.keys().hasAll(['new_sweepstakes', 'ending_soon'])
+        );
+    match /users/{userId} {
+      allow read: if request.auth.uid == userId;
+    }
+    match /contests/{contestId} {
+      allow read: if true;
+    }
+    match /comments/{commentId} {
+      allow read, create: if true;
+    }
+    match /saved/{userId} {
+      allow read: if request.auth.uid == userId;
+      allow create, update, delete: if request.auth.uid == userId;
+    }
+  }
+}
