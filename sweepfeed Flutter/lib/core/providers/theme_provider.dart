@@ -6,21 +6,25 @@ const String _themePreferenceKey = 'app_theme_mode';
 
 /// Notifier for managing and persisting the app's theme mode using ChangeNotifier.
 class ThemeProvider extends ChangeNotifier {
-  final SharedPreferences _prefs;
-  ThemeMode _themeMode = ThemeMode.system; // Default theme
+  // Default theme
 
   ThemeProvider(this._prefs) {
     _loadThemeMode();
   }
+  final SharedPreferences _prefs;
+  ThemeMode _themeMode = ThemeMode.system;
 
   ThemeMode get themeMode => _themeMode;
 
   void _loadThemeMode() {
     final themeIndex = _prefs.getInt(_themePreferenceKey);
-    if (themeIndex != null && themeIndex >= 0 && themeIndex < ThemeMode.values.length) {
+    if (themeIndex != null &&
+        themeIndex >= 0 &&
+        themeIndex < ThemeMode.values.length) {
       _themeMode = ThemeMode.values[themeIndex];
     } else {
-      _themeMode = ThemeMode.system; // Default to system theme if nothing is stored or invalid
+      _themeMode = ThemeMode
+          .system; // Default to system theme if nothing is stored or invalid
     }
     // No need to call notifyListeners() here as this is typically called during construction
     // and the initial value is used when the provider is first read.
@@ -34,7 +38,6 @@ class ThemeProvider extends ChangeNotifier {
         await _prefs.setInt(_themePreferenceKey, mode.index);
       } catch (e) {
         // Handle potential errors during save, e.g., log them
-        debugPrint("Error saving theme preference: $e");
       }
       notifyListeners(); // Notify listeners about the change
     }

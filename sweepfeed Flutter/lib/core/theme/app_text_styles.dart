@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:sweep_feed/core/theme/app_colors.dart';
+import 'app_colors.dart';
 
 class AppTextStyles {
   // Display Styles
@@ -143,7 +143,7 @@ class AppTextStyles {
   );
 
   // For links or text buttons
-  static final TextStyle linkStyle = TextStyle(
+  static const TextStyle linkStyle = TextStyle(
     fontFamily: 'Inter',
     fontSize: 14, // Or bodyMedium.fontSize
     fontWeight: FontWeight.w600, // Often bold or semi-bold

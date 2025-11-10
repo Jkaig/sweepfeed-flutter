@@ -1,19 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
-import 'package:in_app_purchase_android/in_app_purchase_android.dart';
-import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../core/providers/providers.dart';
 import '../models/subscription_plan.dart';
 import '../models/subscription_tiers.dart';
 
 class SubscriptionService with ChangeNotifier {
-  static final SubscriptionService _instance = SubscriptionService._internal();
-  factory SubscriptionService() => _instance;
-  SubscriptionService._internal();
+  SubscriptionService(this._ref);
+  final Ref _ref;
 
   final InAppPurchase _inAppPurchase = InAppPurchase.instance;
 
@@ -22,6 +26,7 @@ class SubscriptionService with ChangeNotifier {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   static const String monthlyProductId = 'com.sweepfeed.app.monthly';
   static const String annualProductId = 'com.sweepfeed.app.annual';
@@ -32,13 +37,58 @@ class SubscriptionService with ChangeNotifier {
   static const String premiumAnnualProductId =
       'com.sweepfeed.app.premium.annual';
 
+  // Price caching constants
+  static const String _priceCacheKey = 'subscription_price_cache';
+  static const String _cacheTimestampKey = 'subscription_cache_timestamp';
+  static const Duration _cacheValidDuration = Duration(hours: 24);
+
+  // Fallback prices with improved structure
+  static final Map<String, Map<String, dynamic>> _fallbackPriceData = {
+    basicMonthlyProductId: {
+      'price': 4.99,
+      'currency': 'USD',
+      'symbol': '\$',
+      'locale': 'en_US',
+    },
+    basicAnnualProductId: {
+      'price': 49.99,
+      'currency': 'USD',
+      'symbol': '\$',
+      'locale': 'en_US',
+    },
+    premiumMonthlyProductId: {
+      'price': 9.99,
+      'currency': 'USD',
+      'symbol': '\$',
+      'locale': 'en_US',
+    },
+    premiumAnnualProductId: {
+      'price': 99.99,
+      'currency': 'USD',
+      'symbol': '\$',
+      'locale': 'en_US',
+    },
+    monthlyProductId: {
+      'price': 4.99,
+      'currency': 'USD',
+      'symbol': '\$',
+      'locale': 'en_US',
+    },
+    annualProductId: {
+      'price': 49.99,
+      'currency': 'USD',
+      'symbol': '\$',
+      'locale': 'en_US',
+    },
+  };
+
   List<String> get _productIds => [
         basicMonthlyProductId,
         basicAnnualProductId,
         premiumMonthlyProductId,
         premiumAnnualProductId,
-        monthlyProductId, 
-        annualProductId, 
+        monthlyProductId,
+        annualProductId,
       ];
 
   List<SubscriptionPlan>? _plans;
@@ -93,8 +143,20 @@ class SubscriptionService with ChangeNotifier {
       _currentTier == SubscriptionTier.premium ||
       isInTrialPeriod;
 
-  bool get hasPremiumAccess =>
-      _isSubscribed && _currentTier == SubscriptionTier.premium;
+  bool get isPremium {
+    final userProfile = _ref.read(userProfileProvider).value;
+    final premiumUntil = userProfile?.premiumUntil;
+
+    if (_isSubscribed && _currentTier == SubscriptionTier.premium) {
+      return true;
+    }
+    if (premiumUntil != null && premiumUntil.toDate().isAfter(DateTime.now())) {
+      return true;
+    }
+    return false;
+  }
+
+  bool get hasPremiumAccess => isPremium;
 
   Future<void> initialize() async {
     await _loadSubscriptionStatus();
@@ -131,147 +193,102 @@ class SubscriptionService with ChangeNotifier {
     await checkSubscriptionStatus();
   }
 
+  /// Enhanced loadProducts with caching and improved dynamic pricing
+  /// Implements strategy: Cache -> Store API -> Fallback
   Future<void> loadProducts() async {
     _isLoading = true;
     _error = '';
     notifyListeners();
 
     try {
-      if (kIsWeb) {
-        _plans = [
-          SubscriptionPlan(
-            id: basicMonthlyProductId,
-            name: 'Basic Monthly',
-            description: 'Basic plan - Ad-free for 1 month',
-            price: '\$4.99',
-            rawPrice: 4.99,
-            currencyCode: 'USD',
-            tier: SubscriptionTier.basic,
-            duration: 'Monthly',
-            productDetails: null,
-          ),
-          SubscriptionPlan(
-            id: basicAnnualProductId,
-            name: 'Basic Annual',
-            description: 'Basic plan - Ad-free for 12 months',
-            price: '\$49.99',
-            rawPrice: 49.99,
-            currencyCode: 'USD',
-             tier: SubscriptionTier.basic,
-            duration: 'Annual',
-            productDetails: null,
-          ),
-          SubscriptionPlan(
-            id: premiumMonthlyProductId,
-            name: 'Premium Monthly',
-            description: 'Premium plan - All features for 1 month',
-            price: '\$9.99',
-            rawPrice: 9.99,
-            currencyCode: 'USD',
-             tier: SubscriptionTier.premium,
-            duration: 'Monthly',
-            productDetails: null,
-          ),
-          SubscriptionPlan(
-            id: premiumAnnualProductId,
-            name: 'Premium Annual',
-            description: 'Premium plan - All features for 12 months',
-            price: '\$99.99',
-            rawPrice: 99.99,
-            currencyCode: 'USD',
-             tier: SubscriptionTier.premium,
-            duration: 'Annual',
-            productDetails: null,
-          ),
-        ];
+      // Step 1: Try to load from cache first (performance optimization)
+      final cachedPlans = await _loadFromCache();
+      if (cachedPlans != null && cachedPlans.isNotEmpty) {
+        if (kDebugMode) {
+          print(
+              '✅ SubscriptionService: Loaded ${cachedPlans.length} plans from cache');
+        }
+        _plans = cachedPlans;
         _productsLoaded = true;
         _isLoading = false;
         notifyListeners();
         return;
       }
 
-      final ProductDetailsResponse response =
-          await _inAppPurchase.queryProductDetails(_productIds.toSet());
-
-      if (response.notFoundIDs.isNotEmpty) {
-        _error = 'Some products not found: ${response.notFoundIDs.join(', ')}';
-        notifyListeners();
+      if (kDebugMode) {
+        print(
+            '🔄 SubscriptionService: No valid cache found, fetching from store...');
       }
 
-      _plans = response.productDetails.map((product) {
-        final bool isBasic = product.id.contains('basic');
-        final bool isPremium = product.id.contains('premium');
-        final bool isAnnual = product.id.contains('annual');
+      // Step 2: For web, use enhanced fallback with proper formatting
+      if (kIsWeb) {
+        _plans = _createWebFallbackPlans();
+        _productsLoaded = true;
+        _isLoading = false;
+        notifyListeners();
+        await _saveToCache(_plans!); // Cache web fallback plans
+        return;
+      }
 
-        return SubscriptionPlan(
-          id: product.id,
-          name: product.title,
-          description: product.description,
-          price: product.price,
-          rawPrice: product.rawPrice,
-          currencyCode: product.currencyCode,
-          tier: isPremium ? SubscriptionTier.premium : SubscriptionTier.basic,
-          duration: isAnnual ? 'Annual' : 'Monthly',
-          productDetails: product,
-        );
-      }).toList();
+      // Step 3: Fetch from IAP store with improved error handling
+      final response =
+          await _inAppPurchase.queryProductDetails(_productIds.toSet());
 
-      if (_plans!.isEmpty) {
-        _plans = [
-           SubscriptionPlan(
-            id: basicMonthlyProductId,
-            name: 'Basic Monthly',
-            description: 'Basic plan - Ad-free for 1 month',
-            price: '\$4.99',
-            rawPrice: 4.99,
-            currencyCode: 'USD',
-            tier: SubscriptionTier.basic,
-            duration: 'Monthly',
-            productDetails: null,
-          ),
-          SubscriptionPlan(
-            id: basicAnnualProductId,
-            name: 'Basic Annual',
-            description: 'Basic plan - Ad-free for 12 months',
-            price: '\$49.99',
-            rawPrice: 49.99,
-            currencyCode: 'USD',
-             tier: SubscriptionTier.basic,
-            duration: 'Annual',
-            productDetails: null,
-          ),
-          SubscriptionPlan(
-            id: premiumMonthlyProductId,
-            name: 'Premium Monthly',
-            description: 'Premium plan - All features for 1 month',
-            price: '\$9.99',
-            rawPrice: 9.99,
-            currencyCode: 'USD',
-             tier: SubscriptionTier.premium,
-            duration: 'Monthly',
-            productDetails: null,
-          ),
-          SubscriptionPlan(
-            id: premiumAnnualProductId,
-            name: 'Premium Annual',
-            description: 'Premium plan - All features for 12 months',
-            price: '\$99.99',
-            rawPrice: 99.99,
-            currencyCode: 'USD',
-             tier: SubscriptionTier.premium,
-            duration: 'Annual',
-            productDetails: null,
-          ),
-        ];
+      if (response.error != null) {
+        throw Exception('Store query failed: ${response.error!.message}');
+      }
+
+      if (response.notFoundIDs.isNotEmpty) {
+        if (kDebugMode) {
+          print(
+              '⚠️ Some IAP products not found: ${response.notFoundIDs.join(', ')}');
+        }
+      }
+
+      // Step 4: Process store products with improved data extraction
+      if (response.productDetails.isNotEmpty) {
+        _plans = response.productDetails.map((product) {
+          return _createPlanFromProduct(product);
+        }).toList();
+
+        if (kDebugMode) {
+          print(
+              '✅ SubscriptionService: Loaded ${_plans!.length} plans from store');
+        }
+
+        // Cache the successful store fetch
+        await _saveToCache(_plans!);
+      }
+
+      // Step 5: Use fallback if no products from store
+      if (_plans == null || _plans!.isEmpty) {
+        if (kDebugMode) {
+          print('⚠️ No products from store, using fallback plans');
+        }
+        _plans = _createFallbackPlans();
       }
 
       _productsLoaded = true;
+      _error = ''; // Clear any errors since we have plans
     } catch (e) {
-      _error = 'Error loading products: ${e.toString()}';
-    } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (kDebugMode) {
+        print('❌ Error loading IAP products: $e');
+      }
+
+      // Use fallback plans on any exception
+      _plans = _createFallbackPlans();
+      _productsLoaded = true;
+      _error = 'Using offline prices: ${e.toString()}';
+
+      // Track fallback usage for analytics
+      if (kDebugMode) {
+        print(
+            '📊 Analytics: Subscription pricing fallback used - ${e.runtimeType}');
+      }
     }
+
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<bool> purchaseSubscription(SubscriptionPlan plan) async {
@@ -290,7 +307,7 @@ class SubscriptionService with ChangeNotifier {
         return false;
       }
 
-      final PurchaseParam purchaseParam = PurchaseParam(
+      final purchaseParam = PurchaseParam(
         productDetails: plan.productDetails!,
         applicationUserName: _auth.currentUser?.uid,
       );
@@ -305,20 +322,18 @@ class SubscriptionService with ChangeNotifier {
     }
   }
 
-  void _listenToPurchaseUpdated(
-      List<PurchaseDetails> purchaseDetailsList) async {
+  Future<void> _listenToPurchaseUpdated(
+    List<PurchaseDetails> purchaseDetailsList,
+  ) async {
     for (final purchaseDetails in purchaseDetailsList) {
       if (purchaseDetails.status == PurchaseStatus.pending) {
-        debugPrint('Purchase pending: ${purchaseDetails.productID}');
       } else {
         if (purchaseDetails.status == PurchaseStatus.error) {
-          debugPrint('Purchase error: ${purchaseDetails.error}');
           _error = purchaseDetails.error?.message ?? 'Unknown error occurred';
         } else if (purchaseDetails.status == PurchaseStatus.purchased ||
             purchaseDetails.status == PurchaseStatus.restored) {
           await _handleSuccessfulPurchase(purchaseDetails);
         } else if (purchaseDetails.status == PurchaseStatus.canceled) {
-          debugPrint('Purchase canceled: ${purchaseDetails.productID}');
           _isPurchasePending = false;
         }
 
@@ -332,58 +347,89 @@ class SubscriptionService with ChangeNotifier {
   }
 
   Future<void> _handleSuccessfulPurchase(PurchaseDetails purchase) async {
-    String productId = purchase.productID;
-    bool isPremium = productId.contains('premium') ||
+    final productId = purchase.productID;
+    final isPremium = productId.contains('premium') ||
         productId == monthlyProductId ||
         productId == annualProductId;
-    bool isAnnual = productId.contains('annual');
+    final isAnnual = productId.contains('annual');
 
-      final DateTime now = DateTime.now();
-      final DateTime expiryDate = isAnnual
-          ? DateTime(now.year + 1, now.month, now.day)
-          : DateTime(now.year, now.month + 1, now.day);
+    final tier = isPremium ? SubscriptionTier.premium : SubscriptionTier.basic;
 
-      final tier =
-          isPremium ? SubscriptionTier.premium : SubscriptionTier.basic;
-
-      try {
-        final String? userId = _auth.currentUser?.uid;
-        if (userId != null) {
-          await _firestore.collection('users').doc(userId).update({
-            'isSubscribed': true,
-            'subscriptionId': purchase.productID,
-            'subscriptionPurchaseDate': now,
-            'subscriptionExpiryDate': expiryDate,
-            'subscriptionTier': tier.name,
-            'subscriptionReceipt':
-                purchase.verificationData.serverVerificationData,
-          });
-
-          _subscriptionStatusController.add(true);
-          _isSubscribed = true;
-          _subscriptionExpiryDate = expiryDate;
-          _currentSubscriptionPlan = isAnnual ? 'Annual' : 'Monthly';
-          _currentTier = tier;
-
-          if (_trialStarted) {
-            _trialStarted = false;
-            _trialExpiryDate = null;
-          }
-
-          await _saveSubscriptionStatus();
-        }
-      } catch (e) {
-        debugPrint('Error updating subscription in Firestore: $e');
-        _error = 'Error updating subscription in Firestore: $e';
+    try {
+      final userId = _auth.currentUser?.uid;
+      if (userId == null) {
+        throw Exception('User not authenticated');
       }
+
+      final verificationData = await _verifyPurchaseWithServer(purchase);
+
+      if (verificationData['valid'] == true) {
+        final expiryTimeMillis = verificationData['expiryTimeMillis'] as int;
+        final expiryDate =
+            DateTime.fromMillisecondsSinceEpoch(expiryTimeMillis);
+
+        _subscriptionStatusController.add(true);
+        _isSubscribed = true;
+        _subscriptionExpiryDate = expiryDate;
+        _currentSubscriptionPlan = isAnnual ? 'Annual' : 'Monthly';
+        _currentTier = tier;
+
+        if (_trialStarted) {
+          _trialStarted = false;
+          _trialExpiryDate = null;
+        }
+
+        await _saveSubscriptionStatus();
+      } else {
+        throw Exception('Purchase verification failed');
+      }
+    } catch (e) {
+      _error = 'Failed to verify purchase: $e';
+      _isPurchasePending = false;
+      notifyListeners();
+      rethrow;
+    }
 
     _isPurchasePending = false;
     notifyListeners();
   }
 
+  Future<Map<String, dynamic>> _verifyPurchaseWithServer(
+      PurchaseDetails purchase) async {
+    try {
+      final platform = Platform.isAndroid ? 'android' : 'ios';
+
+      Map<String, dynamic> purchaseData;
+
+      if (Platform.isAndroid) {
+        purchaseData = {
+          'packageName': 'com.sweepfeed.app',
+          'productId': purchase.productID,
+          'purchaseToken': purchase.verificationData.serverVerificationData,
+        };
+      } else {
+        purchaseData = {
+          'receiptData': purchase.verificationData.serverVerificationData,
+          'isProduction': true,
+        };
+      }
+
+      final callable = _functions.httpsCallable('verifyPurchase');
+      final result = await callable.call({
+        'platform': platform,
+        'purchaseData': purchaseData,
+      });
+
+      return result.data as Map<String, dynamic>;
+    } catch (e) {
+      print('Server verification error: $e');
+      rethrow;
+    }
+  }
+
   Future<bool> checkSubscriptionStatus() async {
     try {
-      final String? userId = _auth.currentUser?.uid;
+      final userId = _auth.currentUser?.uid;
       if (userId == null) {
         _subscriptionStatusController.add(false);
         return false;
@@ -395,23 +441,32 @@ class SubscriptionService with ChangeNotifier {
         return false;
       }
 
-      final data = doc.data() as Map<String, dynamic>;
-      final bool isSubscribed = data['isSubscribed'] ?? false;
+      final data = doc.data()!;
 
-      if (isSubscribed && data['subscriptionExpiryDate'] != null) {
-        final DateTime expiryDate =
-            (data['subscriptionExpiryDate'] as Timestamp).toDate();
-        final bool isActive = expiryDate.isAfter(DateTime.now());
+      final subscriptionData = data['subscription'] as Map<String, dynamic>?;
+      if (subscriptionData == null) {
+        _subscriptionStatusController.add(false);
+        return false;
+      }
+
+      final bool isSubscribed = subscriptionData['active'] ?? false;
+
+      if (isSubscribed && subscriptionData['expiryDate'] != null) {
+        final expiryDate =
+            (subscriptionData['expiryDate'] as Timestamp).toDate();
+        final isActive = expiryDate.isAfter(DateTime.now());
 
         _isSubscribed = isActive;
         if (isActive) {
           _subscriptionExpiryDate = expiryDate;
-          _currentSubscriptionPlan =
-              data['subscriptionId']?.contains('annual') == true
-                  ? 'Annual'
-                  : 'Monthly';
+          _currentSubscriptionPlan = subscriptionData['platform'] ==
+                      'android' &&
+                  subscriptionData['orderId']?.toString().contains('annual') ==
+                      true
+              ? 'Annual'
+              : 'Monthly';
 
-          String tierStr = data['subscriptionTier'] ?? '';
+          final String tierStr = data['subscriptionTier'] ?? '';
           if (tierStr.toLowerCase() == 'premium') {
             _currentTier = SubscriptionTier.premium;
           } else if (tierStr.toLowerCase() == 'basic') {
@@ -432,7 +487,6 @@ class SubscriptionService with ChangeNotifier {
       _subscriptionStatusController.add(isSubscribed);
       return isSubscribed;
     } catch (e) {
-      debugPrint('Error checking subscription status: $e');
       _error = 'Error checking subscription status: $e';
       _subscriptionStatusController.add(false);
       return false;
@@ -450,7 +504,6 @@ class SubscriptionService with ChangeNotifier {
       );
       return true;
     } catch (e) {
-      debugPrint('Error restoring purchases: $e');
       _error = 'Error restoring purchases: $e';
       return false;
     } finally {
@@ -460,13 +513,20 @@ class SubscriptionService with ChangeNotifier {
   }
 
   Future<bool> startFreeTrial() async {
-    if (_trialStarted || _isSubscribed) {
+    if (_isSubscribed) {
       return false;
     }
 
     try {
       final userId = _auth.currentUser?.uid;
       if (userId == null) return false;
+
+      final doc = await _firestore.collection('users').doc(userId).get();
+      final data = doc.data();
+
+      if (data?['trialStarted'] == true) {
+        return false;
+      }
 
       final now = DateTime.now();
       final expiryDate = now.add(const Duration(days: trialPeriodDays));
@@ -479,26 +539,23 @@ class SubscriptionService with ChangeNotifier {
 
       _trialStarted = true;
       _trialExpiryDate = expiryDate;
-      await _saveTrialStatus();
       notifyListeners();
       return true;
     } catch (e) {
-      debugPrint('Error starting trial: $e');
-      _error = 'Error starting trial: $e';
+      _error = 'Unable to start trial. Please try again later.';
       return false;
     }
   }
 
   Future<void> cancelSubscription() async {
     try {
-      final String? userId = _auth.currentUser?.uid;
+      final userId = _auth.currentUser?.uid;
       if (userId != null) {
         await _firestore.collection('users').doc(userId).update({
           'cancellationRequested': true,
         });
       }
     } catch (e) {
-      debugPrint('Error canceling subscription: $e');
       _error = 'Error canceling subscription: $e';
     }
   }
@@ -516,46 +573,47 @@ class SubscriptionService with ChangeNotifier {
     await prefs.setBool(_userSubscriptionStatusKey, _isSubscribed);
 
     if (_subscriptionExpiryDate != null) {
-      await prefs.setString(_userSubscriptionExpiryKey,
-          _subscriptionExpiryDate!.toIso8601String());
+      await prefs.setString(
+        _userSubscriptionExpiryKey,
+        _subscriptionExpiryDate!.toIso8601String(),
+      );
     }
 
     if (_currentSubscriptionPlan != null) {
       await prefs.setString(
-          'current_subscription_plan', _currentSubscriptionPlan!);
+        'current_subscription_plan',
+        _currentSubscriptionPlan!,
+      );
     }
 
     await prefs.setString(_userSubscriptionTierKey, _currentTier.name);
   }
 
-  Future<void> _saveTrialStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_userTrialStartedKey, _trialStarted);
-
-    if (_trialExpiryDate != null) {
-      await prefs.setString(
-          _userTrialExpiryKey, _trialExpiryDate!.toIso8601String());
-    }
-  }
-
   Future<void> _loadSubscriptionStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    _isSubscribed = prefs.getBool(_userSubscriptionStatusKey) ?? false;
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
 
-    final expiryDateStr = prefs.getString(_userSubscriptionExpiryKey);
-    if (expiryDateStr != null) {
-      _subscriptionExpiryDate = DateTime.parse(expiryDateStr);
+    try {
+      final doc = await _firestore.collection('users').doc(userId).get();
+      final data = doc.data();
 
-      if (_subscriptionExpiryDate!.isBefore(DateTime.now())) {
-        _isSubscribed = false;
-        await _saveSubscriptionStatus();
+      if (data == null) return;
+
+      final subscriptionData = data['subscription'] as Map<String, dynamic>?;
+      if (subscriptionData != null) {
+        _isSubscribed = subscriptionData['active'] ?? false;
+
+        if (subscriptionData['expiryDate'] != null) {
+          _subscriptionExpiryDate =
+              (subscriptionData['expiryDate'] as Timestamp).toDate();
+
+          if (_subscriptionExpiryDate!.isBefore(DateTime.now())) {
+            _isSubscribed = false;
+          }
+        }
       }
-    }
 
-    _currentSubscriptionPlan = prefs.getString('current_subscription_plan');
-
-    final tierStr = prefs.getString(_userSubscriptionTierKey);
-    if (tierStr != null) {
+      final String tierStr = data['subscriptionTier'] ?? '';
       if (tierStr.toLowerCase() == 'premium') {
         _currentTier = SubscriptionTier.premium;
       } else if (tierStr.toLowerCase() == 'basic') {
@@ -563,18 +621,20 @@ class SubscriptionService with ChangeNotifier {
       } else {
         _currentTier = SubscriptionTier.free;
       }
-    }
 
-    _trialStarted = prefs.getBool(_userTrialStartedKey) ?? false;
+      _trialStarted = data['trialStarted'] ?? false;
 
-    final trialExpiryDateStr = prefs.getString(_userTrialExpiryKey);
-    if (trialExpiryDateStr != null) {
-      _trialExpiryDate = DateTime.parse(trialExpiryDateStr);
+      if (data['trialExpiryDate'] != null) {
+        _trialExpiryDate = (data['trialExpiryDate'] as Timestamp).toDate();
 
-      if (_trialExpiryDate!.isBefore(DateTime.now())) {
-        _trialStarted = false;
-        await _saveTrialStatus();
+        if (_trialExpiryDate!.isBefore(DateTime.now())) {
+          _trialStarted = false;
+        }
       }
+
+      await _saveSubscriptionStatus();
+    } catch (e) {
+      print('Error loading subscription status: $e');
     }
 
     notifyListeners();
@@ -598,5 +658,241 @@ class SubscriptionService with ChangeNotifier {
     } else {
       return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} remaining';
     }
+  }
+
+  // Additional missing properties and methods
+  Stream<bool> get isSubscribedStream => subscriptionStatus;
+
+  /// Create subscription plan from store product with enhanced data processing
+  SubscriptionPlan _createPlanFromProduct(ProductDetails product) {
+    final isPremium = product.id.contains('premium');
+    final isAnnual = product.id.contains('annual');
+
+    // Use store's localized price or format manually if needed
+    String formattedPrice = product.price;
+    if (formattedPrice.isEmpty && product.rawPrice > 0) {
+      try {
+        final format = NumberFormat.simpleCurrency(
+          locale: 'en_US', // Could be dynamic based on user locale
+          name: product.currencyCode,
+        );
+        formattedPrice = format.format(product.rawPrice);
+      } catch (e) {
+        // Fallback to simple formatting
+        formattedPrice =
+            '${product.currencyCode} ${product.rawPrice.toStringAsFixed(2)}';
+      }
+    }
+
+    return SubscriptionPlan(
+      id: product.id,
+      name: product.title.isNotEmpty
+          ? product.title
+          : _generatePlanName(product.id),
+      description: product.description.isNotEmpty
+          ? product.description
+          : _generatePlanDescription(product.id),
+      price: formattedPrice,
+      rawPrice: product.rawPrice,
+      currencyCode: product.currencyCode,
+      tier: isPremium ? SubscriptionTier.premium : SubscriptionTier.basic,
+      duration: isAnnual ? 'Annual' : 'Monthly',
+      productDetails: product,
+    );
+  }
+
+  /// Create enhanced web fallback plans with proper localization
+  List<SubscriptionPlan> _createWebFallbackPlans() {
+    return _fallbackPriceData.entries.map((entry) {
+      final productId = entry.key;
+      final priceData = entry.value;
+      final isPremium = productId.contains('premium');
+      final isAnnual = productId.contains('annual');
+
+      final formattedPrice = _formatFallbackPrice(
+        priceData['price'],
+        priceData['currency'],
+        priceData['symbol'],
+        priceData['locale'],
+      );
+
+      return SubscriptionPlan(
+        id: productId,
+        name: _generatePlanName(productId),
+        description: _generatePlanDescription(productId),
+        price: formattedPrice,
+        rawPrice: priceData['price'],
+        currencyCode: priceData['currency'],
+        tier: isPremium ? SubscriptionTier.premium : SubscriptionTier.basic,
+        duration: isAnnual ? 'Annual' : 'Monthly',
+      );
+    }).toList();
+  }
+
+  /// Create fallback plans with enhanced formatting
+  List<SubscriptionPlan> _createFallbackPlans() {
+    return _fallbackPriceData.entries.map((entry) {
+      final productId = entry.key;
+      final priceData = entry.value;
+      final isPremium = productId.contains('premium');
+      final isAnnual = productId.contains('annual');
+
+      final formattedPrice = _formatFallbackPrice(
+        priceData['price'],
+        priceData['currency'],
+        priceData['symbol'],
+        priceData['locale'],
+      );
+
+      return SubscriptionPlan(
+        id: productId,
+        name: _generatePlanName(productId),
+        description: _generatePlanDescription(productId),
+        price: formattedPrice,
+        rawPrice: priceData['price'],
+        currencyCode: priceData['currency'],
+        tier: isPremium ? SubscriptionTier.premium : SubscriptionTier.basic,
+        duration: isAnnual ? 'Annual' : 'Monthly',
+      );
+    }).toList();
+  }
+
+  /// Format fallback price with proper localization
+  String _formatFallbackPrice(
+      double price, String currency, String symbol, String locale) {
+    try {
+      final format =
+          NumberFormat.simpleCurrency(locale: locale, name: currency);
+      return format.format(price);
+    } catch (e) {
+      // Fallback to simple symbol + price formatting
+      return '$symbol${price.toStringAsFixed(2)}';
+    }
+  }
+
+  /// Generate user-friendly plan names
+  String _generatePlanName(String productId) {
+    if (productId.contains('premium')) {
+      return productId.contains('annual')
+          ? 'Premium Annual'
+          : 'Premium Monthly';
+    } else {
+      return productId.contains('annual') ? 'Basic Annual' : 'Basic Monthly';
+    }
+  }
+
+  /// Generate plan descriptions
+  String _generatePlanDescription(String productId) {
+    final isPremium = productId.contains('premium');
+    final isAnnual = productId.contains('annual');
+    final duration = isAnnual ? '12 months' : '1 month';
+    final features = isPremium ? 'All premium features' : 'Ad-free experience';
+    return '$features for $duration';
+  }
+
+  /// Load cached subscription plans with expiration check
+  Future<List<SubscriptionPlan>?> _loadFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final timestamp = prefs.getInt(_cacheTimestampKey) ?? 0;
+      final cacheTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+
+      // Check if cache is still valid (within 24 hours)
+      if (DateTime.now().difference(cacheTime) > _cacheValidDuration) {
+        if (kDebugMode) {
+          print('💾 SubscriptionService: Cache expired, clearing...');
+        }
+        await clearPriceCache();
+        return null;
+      }
+
+      final cachedData = prefs.getString(_priceCacheKey);
+      if (cachedData == null) return null;
+
+      final Map<String, dynamic> decodedData = jsonDecode(cachedData);
+      final List<SubscriptionPlan> plans = [];
+
+      for (final entry in decodedData.entries) {
+        final planData = entry.value as Map<String, dynamic>;
+        plans.add(SubscriptionPlan(
+          id: planData['id'],
+          name: planData['name'],
+          description: planData['description'],
+          price: planData['price'],
+          rawPrice: planData['rawPrice'],
+          currencyCode: planData['currencyCode'],
+          tier: SubscriptionTier.values.firstWhere(
+            (tier) => tier.name == planData['tier'],
+            orElse: () => SubscriptionTier.basic,
+          ),
+          duration: planData['duration'],
+        ));
+      }
+
+      return plans;
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error loading from cache: $e');
+      }
+      // Clear corrupted cache
+      await clearPriceCache();
+      return null;
+    }
+  }
+
+  /// Save subscription plans to cache with timestamp
+  Future<void> _saveToCache(List<SubscriptionPlan> plans) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final Map<String, dynamic> dataToCache = {};
+
+      for (final plan in plans) {
+        dataToCache[plan.id] = {
+          'id': plan.id,
+          'name': plan.name,
+          'description': plan.description,
+          'price': plan.price,
+          'rawPrice': plan.rawPrice,
+          'currencyCode': plan.currencyCode,
+          'tier': plan.tier.name,
+          'duration': plan.duration,
+        };
+      }
+
+      await prefs.setString(_priceCacheKey, jsonEncode(dataToCache));
+      await prefs.setInt(
+          _cacheTimestampKey, DateTime.now().millisecondsSinceEpoch);
+
+      if (kDebugMode) {
+        print('💾 SubscriptionService: Cached ${plans.length} plans');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error saving to cache: $e');
+      }
+    }
+  }
+
+  /// Clear the price cache (useful for debugging or forced refresh)
+  Future<void> clearPriceCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_priceCacheKey);
+      await prefs.remove(_cacheTimestampKey);
+
+      if (kDebugMode) {
+        print('🧹 SubscriptionService: Price cache cleared');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('❌ Error clearing cache: $e');
+      }
+    }
+  }
+
+  /// Force refresh prices from store (bypasses cache)
+  Future<void> refreshPrices() async {
+    await clearPriceCache();
+    await loadProducts();
   }
 }

@@ -1,27 +1,37 @@
 import 'package:flutter/material.dart';
-import 'package:sweep_feed/core/widgets/primary_button.dart';
+import '../../../core/theme/app_colors.dart';
 
 class EnterButton extends StatelessWidget {
-  final VoidCallback? onPressed;
-  final bool enabled;
-  final String text;
-
   const EnterButton({
     super.key,
     this.onPressed,
     this.enabled = true,
-    this.text = "Enter",
+    this.text = 'Enter',
   });
+  final VoidCallback? onPressed;
+  final bool enabled;
+  final String text;
 
   @override
-  Widget build(BuildContext context) {
-    // The button should take the width available in its parent.
-    // If used in a Row, it might need to be wrapped in Flexible or Expanded.
-    // For ContestCard, it's expected to be relatively small, so default PrimaryButton size is fine.
-    return PrimaryButton(
-      text: text,
-      onPressed: enabled ? onPressed : null,
-      isLoading: false, // Assuming EnterButton itself doesn't manage isLoading directly
-    );
-  }
+  Widget build(BuildContext context) => ElevatedButton(
+        onPressed: (enabled && onPressed != null) ? onPressed : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.accent,
+          foregroundColor: AppColors.primaryDark,
+          disabledBackgroundColor: AppColors.textMuted,
+          disabledForegroundColor: AppColors.textLight,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
 }

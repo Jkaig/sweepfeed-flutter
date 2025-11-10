@@ -1,33 +1,112 @@
-import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
+import 'package:local_auth/local_auth.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'dart:math'; // For random code generation
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:sweepfeed_app/core/services/gamification_service.dart'; // Import GamificationService
+
+import '../../../core/config/secure_config.dart';
+import '../../../core/errors/app_error.dart';
+import '../../../core/services/dust_bunnies_service.dart';
+import '../../../core/services/notification_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/logger.dart';
 import '../../onboarding/screens/prize_preferences_screen.dart';
+import '../screens/otp_screen.dart';
 
+/// A comprehensive authentication service for managing user authentication,
+/// profile data, and related features.
+///
+/// This service provides methods for:
+///   - Signing in and signing up users with Google, Apple, phone number, and email/password.
+///   - Managing user profiles, including creation, updates, and profile picture uploads.
+///   - Implementing biometric authentication for enhanced security.
+///   - Integrating gamification features like points, streaks, and achievements.
+///   - Handling subscription management.
+///   - Managing user preferences and notification settings.
+///   - Managing referral codes.
+///
+/// The service utilizes Firebase Authentication, Firestore, and Storage for its
+/// backend functionality. It also integrates with local_auth for biometric
+/// authentication and flutter_secure_storage for secure storage of sensitive data.
 class AuthService {
+  AuthService() {
+    _gamificationService = DustBunniesService();
+    // GoogleSignIn will be configured with clientId during sign-in
+    _googleSignIn = GoogleSignIn();
+  }
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GamificationService _gamificationService = GamificationService(); // Add GamificationService instance
+  late final GoogleSignIn _googleSignIn;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [
-      'email',
-      'profile',
-    ],
-    signInOption: SignInOption.standard,
-  );
+  final LocalAuthentication _localAuth = LocalAuthentication();
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  late final DustBunniesService _gamificationService;
+  final NotificationService _notificationService = NotificationService();
 
-  // Auth state stream
+  /// Returns a stream of [User] objects representing the authentication state changes.
+  ///
+  /// This stream emits a new [User] object whenever the authentication state changes,
+  /// such as when a user signs in or signs out. It emits `null` when there is no
+  /// currently signed-in user.
+  ///
+  /// @returns A [Stream] of [User?] objects representing the authentication state.
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Current user
+  /// Returns the currently signed-in [User] object, or `null` if no user is signed in.
+  ///
+  /// This getter provides access to the current user's information, such as their
+  /// user ID, email address, and display name.
+  ///
+  /// @returns The current [User] object, or `null` if no user is signed in.
   User? get currentUser => _auth.currentUser;
+
+  Future<String?> _uploadProfileImageToStorage(
+    String userId,
+    String photoURL,
+  ) async {
+    try {
+      final response = await http.get(Uri.parse(photoURL));
+      if (response.statusCode != 200) {
+        logger.e('Failed to download profile image: ${response.statusCode}');
+        return null;
+      }
+
+      final imageData = response.bodyBytes;
+
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('users/$userId/profile_picture.jpg');
+
+      final uploadTask = await storageRef.putData(
+        imageData,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      final downloadURL = await uploadTask.ref.getDownloadURL();
+      logger.i('Profile image uploaded successfully: $downloadURL');
+      return downloadURL;
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        logger.e('Permission denied uploading profile image', error: e);
+      } else if (e.code == 'quota-exceeded') {
+        logger.e('Storage quota exceeded uploading profile image', error: e);
+      } else {
+        logger.e(
+            'Firebase error uploading profile image: ${e.code} - ${e.message}',
+            error: e);
+      }
+      return null;
+    } catch (e) {
+      logger.e('Unexpected error uploading profile image to storage', error: e);
+      return null;
+    }
+  }
 
   // Create or update user profile
   Future<void> _createOrUpdateUserProfile(
@@ -36,241 +115,361 @@ class AuthService {
     String? email,
     String? photoURL,
     String? provider,
-    String? referralCode, // New parameter for the new user's own code
-    String? referredByCode, // New parameter for the code they were referred by
+    String? referralCode,
+    String? referredByCode,
     Map<String, dynamic>? additionalData,
   }) async {
-    final userData = {
-      'uid': user.uid,
-      'email': email ?? user.email,
-      'displayName': displayName ?? user.displayName,
-      'photoURL': photoURL ?? user.photoURL,
-      'provider': provider ?? 'email',
-      'createdAt': FieldValue.serverTimestamp(),
-      'lastSignIn': FieldValue.serverTimestamp(),
-      'onboardingCompleted': false,
-      
-      // Referral Information
-      'referralCode': referralCode, // Store the new user's own referral code
-      'referredByCode': referredByCode, // Store the code of the user who referred them
-      'referralCount': 0, // Initialize referral count
+    try {
+      // Validate required user data
+      if (user.uid.isEmpty) {
+        throw const ValidationError('User ID is required');
+      }
 
-      // Subscription Information
-      'subscription': {
-        'status': 'trial', // trial, active, expired, cancelled
-        'plan': 'free', // free, basic, premium
-        'startDate': FieldValue.serverTimestamp(),
-        'endDate': null,
-        'autoRenew': false,
-        'paymentMethod': null,
-        'lastPaymentDate': null,
-        'nextBillingDate': null,
-      },
+      var finalPhotoURL = photoURL ?? user.photoURL;
 
-      // Sweepstake History
-      'sweepstakes': {
-        'entries': [], // Array of entry objects
-        'history': [], // Array of historical entries
-        'favorites': [], // Array of favorite sweepstakes IDs
-        'wins': [], // Array of won sweepstakes
-      },
+      // Handle profile image upload with error handling
+      if (finalPhotoURL != null && finalPhotoURL.isNotEmpty) {
+        try {
+          final uploadedURL =
+              await _uploadProfileImageToStorage(user.uid, finalPhotoURL);
+          if (uploadedURL != null) {
+            finalPhotoURL = uploadedURL;
+          }
+        } on FirebaseException catch (e) {
+          logger.w(
+              'Firebase error during profile image upload, continuing without image: ${e.code}',
+              error: e);
+          finalPhotoURL = null;
+        } catch (e) {
+          logger.w(
+              'Unexpected error during profile image upload, continuing without image',
+              error: e);
+          finalPhotoURL = null;
+        }
+      }
 
-      // Preferences
-      'preferences': {
-        'categories': [],
-        'country': 'United States',
-        'notificationPreferences': {
-          'email': true,
-          'push': true,
-          'wins': true,
-          'newSweepstakes': true,
-          'reminders': true,
+      final userData = {
+        'uid': user.uid,
+        'email': email ?? user.email,
+        'name': displayName ?? user.displayName,
+        'profilePictureUrl': finalPhotoURL,
+        'signInProvider': provider ?? 'email',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastSignIn': FieldValue.serverTimestamp(),
+        'onboardingCompleted': false,
+
+        // Referral Information
+        'referralCode': referralCode, // Store the new user's own referral code
+        'referredByCode':
+            referredByCode, // Store the code of the user who referred them
+        'referralCount': 0, // Initialize referral count
+
+        // Subscription Information
+        'subscription': {
+          'status': 'trial', // trial, active, expired, cancelled
+          'plan': 'free', // free, basic, premium
+          'startDate': FieldValue.serverTimestamp(),
+          'endDate': null,
+          'autoRenew': false,
+          'paymentMethod': null,
+          'lastPaymentDate': null,
+          'nextBillingDate': null,
         },
-      },
 
-      // User Stats
-      'stats': {
-        'totalEntries': 0,
-        'activeEntries': 0,
-        'totalWins': 0,
-        'winRate': 0.0,
-        'points': 0,
-        'streak': 0, // Daily entry streak
-        'lastEntryDate': null,
-      },
-
-      // Account Status
-      'account': {
-        'status': 'active', // active, suspended, banned
-        'verificationStatus': 'unverified', // unverified, pending, verified
-        'trialEndDate': FieldValue.serverTimestamp(), // 7 days from creation
-        'lastActivity': FieldValue.serverTimestamp(),
-        'deviceTokens': [], // For push notifications
-      },
-
-      // Settings
-      'settings': {
-        'notifications': true,
-        'emailUpdates': true,
-        'privacy': {
-          'showWins': true,
-          'showEntries': true,
-          'showProfile': true,
+        // Sweepstake History
+        'sweepstakes': {
+          'entries': [], // Array of entry objects
+          'history': [], // Array of historical entries
+          'favorites': [], // Array of favorite sweepstakes IDs
+          'wins': [], // Array of won sweepstakes
         },
-        'theme': 'system', // system, light, dark
-        'language': 'en',
-      },
 
-      // Interest Tracking
-      'interests': {
-        'categories': [], // Selected prize categories
-        'priceRanges': {
-          'min': 0,
-          'max': 1000,
-        },
-        'frequency': 'daily', // daily, weekly, monthly
-        'preferredEntryMethods': [], // instant, daily, weekly
-        'excludedBrands': [], // Brands user doesn't want to see
-        'favoriteBrands': [], // Brands user prefers
-        'searchHistory': [], // Recent searches
-        'viewedSweepstakes': [], // Recently viewed sweepstakes
-        'engagement': {
-          'lastCategoryView': {},
-          'categoryClickCount': {},
-          'timeSpent': 0, // in minutes
-          'preferredTimeOfDay': 'any', // morning, afternoon, evening, any
-        },
-      },
-
-      // Notification Settings
-      'notifications': {
-        'enabled': true,
-        'channels': {
-          'email': {
-            'enabled': true,
-            'frequency': 'daily', // instant, daily, weekly
-            'types': {
-              'newSweepstakes': true,
-              'endingSoon': true,
-              'wins': true,
-              'reminders': true,
-              'promotions': true,
-              'newsletter': true,
-            },
-            'preferredTime': '09:00', // 24-hour format
-          },
-          'push': {
-            'enabled': true,
-            'types': {
-              'newSweepstakes': true,
-              'endingSoon': true,
-              'wins': true,
-              'reminders': true,
-              'streakReminders': true,
-            },
-            'quietHours': {
-              'enabled': false,
-              'start': '22:00',
-              'end': '07:00',
-            },
-          },
-          'inApp': {
-            'enabled': true,
-            'types': {
-              'newSweepstakes': true,
-              'endingSoon': true,
-              'wins': true,
-              'streakUpdates': true,
-              'pointsEarned': true,
-            },
-          },
-        },
+        // Preferences
         'preferences': {
-          'minimumPrizeValue': 10, // Minimum value to notify about
-          'onlyFavorites': false, // Only notify about favorite brands
-          'geographicRelevance': true, // Only relevant to user's location
-          'frequencyCap': 3, // Max notifications per day
+          'categories': [],
+          'country': 'United States',
+          'notificationPreferences': {
+            'email': true,
+            'push': true,
+            'wins': true,
+            'newSweepstakes': true,
+            'reminders': true,
+          },
         },
-      },
 
-      // Gamification System
-      'gamification': {
-        'points': {
-          'total': 0,
-          'available': 0,
-          'spent': 0,
-          'history': [], // Array of point transactions
-        },
-        'level': {
-          'current': 1,
-          'experience': 0,
-          'nextLevel': 100, // Points needed for next level
-          'progress': 0.0, // Percentage to next level
-        },
-        'streaks': {
-          'current': 0,
-          'longest': 0,
-          'lastEntryDate': null,
-          'history': [], // Array of streak periods
-        },
-        'achievements': {
-          'unlocked': [], // Array of achievement IDs
-          'progress': {}, // Map of achievement ID to progress
-          'rewards': [], // Array of claimed rewards
-        },
-        'badges': {
-          'collected': [], // Array of badge IDs
-          'displayed': [], // Array of badge IDs to show on profile
-        },
-        'dailyChallenges': {
-          'current': [], // Array of active challenges
-          'completed': [], // Array of completed challenge IDs
-          'streak': 0, // Consecutive days completing challenges
-        },
-        'leaderboard': {
-          'rank': 0,
-          'categoryRanks': {}, // Ranks in different categories
-          'lastUpdated': null,
-        },
-        'rewards': {
-          'available': [], // Array of available rewards
-          'claimed': [], // Array of claimed rewards
-          'pending': [], // Array of pending rewards
-        },
-        'milestones': {
-          'entries': 0,
-          'wins': 0,
+        // User Stats
+        'stats': {
+          'totalEntries': 0,
+          'activeEntries': 0,
+          'totalWins': 0,
+          'winRate': 0.0,
           'points': 0,
-          'streak': 0,
-          'achievements': 0,
+          'streak': 0, // Daily entry streak
+          'lastEntryDate': null,
         },
-      },
 
-      // Additional Profile Data
-      if (additionalData != null) ...additionalData,
-    };
+        // Account Status
+        'account': {
+          'status': 'active', // active, suspended, banned
+          'verificationStatus': 'unverified', // unverified, pending, verified
+          'trialEndDate': FieldValue.serverTimestamp(), // 7 days from creation
+          'lastActivity': FieldValue.serverTimestamp(),
+          'deviceTokens': [], // For push notifications
+        },
 
-    await _firestore
-        .collection('users')
-        .doc(user.uid)
-        .set(userData, SetOptions(merge: true));
+        // Settings
+        'settings': {
+          'notifications': true,
+          'emailUpdates': true,
+          'privacy': {
+            'showWins': true,
+            'showEntries': true,
+            'showProfile': true,
+          },
+          'theme': 'system', // system, light, dark
+          'language': 'en',
+        },
+
+        // Interest Tracking
+        'interests': {
+          'categories': [], // Selected prize categories
+          'priceRanges': {
+            'min': 0,
+            'max': 1000,
+          },
+          'frequency': 'daily', // daily, weekly, monthly
+          'preferredEntryMethods': [], // instant, daily, weekly
+          'excludedBrands': [], // Brands user doesn't want to see
+          'favoriteBrands': [], // Brands user prefers
+          'searchHistory': [], // Recent searches
+          'viewedSweepstakes': [], // Recently viewed sweepstakes
+          'engagement': {
+            'lastCategoryView': {},
+            'categoryClickCount': {},
+            'timeSpent': 0, // in minutes
+            'preferredTimeOfDay': 'any', // morning, afternoon, evening, any
+          },
+        },
+
+        // Notification Settings
+        'notifications': {
+          'enabled': true,
+          'channels': {
+            'email': {
+              'enabled': true,
+              'frequency': 'daily', // instant, daily, weekly
+              'types': {
+                'newSweepstakes': true,
+                'endingSoon': true,
+                'wins': true,
+                'reminders': true,
+                'promotions': true,
+                'newsletter': true,
+              },
+              'preferredTime': '09:00', // 24-hour format
+            },
+            'push': {
+              'enabled': true,
+              'types': {
+                'newSweepstakes': true,
+                'endingSoon': true,
+                'wins': true,
+                'reminders': true,
+                'streakReminders': true,
+              },
+              'quietHours': {
+                'enabled': false,
+                'start': '22:00',
+                'end': '07:00',
+              },
+            },
+            'inApp': {
+              'enabled': true,
+              'types': {
+                'newSweepstakes': true,
+                'endingSoon': true,
+                'wins': true,
+                'streakUpdates': true,
+                'pointsEarned': true,
+              },
+            },
+          },
+          'preferences': {
+            'minimumPrizeValue': 10, // Minimum value to notify about
+            'onlyFavorites': false, // Only notify about favorite brands
+            'geographicRelevance': true, // Only relevant to user's location
+            'frequencyCap': 3, // Max notifications per day
+          },
+        },
+
+        // Gamification System
+        'gamification': {
+          'points': {
+            'total': 0,
+            'available': 0,
+            'spent': 0,
+            'history': [], // Array of point transactions
+          },
+          'level': {
+            'current': 1,
+            'experience': 0,
+            'nextLevel': 100, // Points needed for next level
+            'progress': 0.0, // Percentage to next level
+          },
+          'streaks': {
+            'current': 0,
+            'longest': 0,
+            'lastEntryDate': null,
+            'history': [], // Array of streak periods
+          },
+          'achievements': {
+            'unlocked': [], // Array of achievement IDs
+            'progress': {}, // Map of achievement ID to progress
+            'rewards': [], // Array of claimed rewards
+          },
+          'badges': {
+            'collected': [], // Array of badge IDs
+            'displayed': [], // Array of badge IDs to show on profile
+          },
+          'dailyChallenges': {
+            'current': [], // Array of active challenges
+            'completed': [], // Array of completed challenge IDs
+            'streak': 0, // Consecutive days completing challenges
+          },
+          'leaderboard': {
+            'rank': 0,
+            'categoryRanks': {}, // Ranks in different categories
+            'lastUpdated': null,
+          },
+          'rewards': {
+            'available': [], // Array of available rewards
+            'claimed': [], // Array of claimed rewards
+            'pending': [], // Array of pending rewards
+          },
+          'milestones': {
+            'entries': 0,
+            'wins': 0,
+            'points': 0,
+            'streak': 0,
+            'achievements': 0,
+          },
+        },
+
+        // Additional Profile Data
+        if (additionalData != null) ...additionalData,
+      };
+
+      // Attempt to create/update user profile in Firestore
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .set(userData, SetOptions(merge: true));
+
+      logger
+          .i('User profile created/updated successfully for user: ${user.uid}');
+    } on FirebaseException catch (e) {
+      logger.e('Firebase error creating user profile', error: e);
+      throw FirestoreError(
+        'Failed to create user profile. Please try again.',
+        rawError: e,
+        context: '_createOrUpdateUserProfile',
+      );
+    } catch (e) {
+      logger.e('Unexpected error creating user profile', error: e);
+      throw AppError.fromException(
+        e,
+        context: '_createOrUpdateUserProfile',
+        customMessage: 'Failed to set up your account. Please try again.',
+      );
+    }
   }
 
-  // Sign in with email and password
-  Future<void> signInWithEmail(
-      String email, String password, BuildContext context) async {
+  /// Sends a sign-in link to the specified email address.
+  ///
+  /// This method triggers the process of sending a magic link to the provided
+  /// email. The user can then click on this link to sign in or register.
+  ///
+  /// @param email The email address to send the sign-in link to. Must be a valid email format.
+  /// @param context The BuildContext of the current widget tree. Used for displaying UI messages.
+  /// @throws [FirebaseAuthException] if there's an issue sending the link.
+  /// @throws [Exception] for other unexpected errors during the process.
+  Future<void> sendSignInLinkToEmail(String email, BuildContext context) async {
     try {
-      final UserCredential userCredential =
-          await _auth.signInWithEmailAndPassword(
+      await _auth.sendSignInLinkToEmail(
         email: email,
-        password: password,
+        actionCodeSettings: ActionCodeSettings(
+          url: 'https://sweepfeed.page.link/signIn',
+          handleCodeInApp: true,
+          iOSBundleId: 'com.sweepfeed.app',
+          androidPackageName: 'com.sweepfeed.app',
+          androidInstallApp: true,
+          androidMinimumVersion: '12',
+        ),
       );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('A sign-in link has been sent to your email.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String message;
+      if (e.code == 'invalid-email') {
+        message = 'Invalid email address provided.';
+      } else if (e.code == 'user-not-found') {
+        message = 'No account found with this email.';
+      } else {
+        message = 'Error sending email link: ${e.message}';
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      logger.e('Firebase Auth error sending email link: ${e.code}', error: e);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unexpected error sending email link'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      logger.e('Unexpected error sending email link', error: e);
+    }
+  }
+
+  /// Signs in the user using a sign-in link received via email.
+  ///
+  /// This method completes the sign-in process after the user clicks on the
+  /// magic link sent to their email. It validates the link and signs in the user.
+  ///
+  /// @param email The email address the sign-in link was sent to.
+  /// @param emailLink The sign-in link extracted from the email.
+  /// @param context The BuildContext of the current widget tree.
+  /// @throws [FirebaseAuthException] if the sign-in fails.
+  /// @throws [Exception] for other unexpected errors during the process.
+  Future<void> signInWithEmailLink(
+    String email,
+    String emailLink,
+    BuildContext context,
+  ) async {
+    try {
+      final userCredential =
+          await _auth.signInWithEmailLink(email: email, emailLink: emailLink);
 
       if (userCredential.user != null) {
         await _createOrUpdateUserProfile(
           userCredential.user!,
           email: email,
-          provider: 'email',
+          provider: 'email_link',
         );
 
         // Navigate to prize preferences screen
@@ -278,42 +477,16 @@ class AuthService {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-                builder: (context) => const PrizePreferencesScreen()),
+              builder: (context) => const PrizePreferencesScreen(),
+            ),
           );
         }
-      }
-    } on FirebaseAuthException catch (e) {
-      String errorMessage;
-      switch (e.code) {
-        case 'user-not-found':
-          errorMessage = 'No account found with this email.';
-          break;
-        case 'wrong-password':
-          errorMessage = 'Incorrect password.';
-          break;
-        case 'invalid-email':
-          errorMessage = 'The email address is not valid.';
-          break;
-        case 'user-disabled':
-          errorMessage = 'This account has been disabled.';
-          break;
-        default:
-          errorMessage = 'An error occurred: ${e.message}';
-      }
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: AppColors.error,
-          ),
-        );
       }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('An unexpected error occurred: $e'),
+            content: Text('Error signing in with email link: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -321,113 +494,380 @@ class AuthService {
     }
   }
 
-  // Sign in with Google
-  Future<void> signInWithGoogle(BuildContext context) async {
+  /// Signs in the user anonymously.
+  ///
+  /// This method allows users to access the app without providing any
+  /// personal information. Useful for allowing users to explore the app
+  /// before creating an account. Anonymous users can be upgraded to regular
+  /// accounts later.
+  ///
+  /// @param context The BuildContext of the current widget tree.
+  /// @throws [FirebaseAuthException] if the anonymous sign-in fails.
+  /// @throws [Exception] for other unexpected errors during the process.
+  Future<void> signInAnonymously(BuildContext context) async {
     try {
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return;
-
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      final UserCredential userCredential =
-          await _auth.signInWithCredential(credential);
-      final User? user = userCredential.user;
-
+      final userCredential = await _auth.signInAnonymously();
+      final user = userCredential.user;
       if (user != null) {
         await _createOrUpdateUserProfile(
           user,
-          displayName: user.displayName,
-          email: user.email,
-          photoURL: user.photoURL,
-          provider: 'google',
+          displayName: 'Test User',
+          email: 'tester@sweepfeed.app',
+          provider: 'anonymous',
         );
 
-        // Navigate to prize preferences screen
-        if (context.mounted) {
+        // Check if user needs onboarding
+        final doc = await _firestore.collection('users').doc(user.uid).get();
+        if (doc.exists &&
+            doc.data()?['onboardingCompleted'] != true &&
+            context.mounted) {
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(
-                builder: (context) => const PrizePreferencesScreen()),
+            MaterialPageRoute(builder: (_) => const PrizePreferencesScreen()),
           );
         }
       }
     } catch (e) {
-      print('Error signing in with Google: $e');
+      logger.e('Anonymous sign in failed', error: e);
       rethrow;
     }
   }
 
-  // Sign in with Apple
-  Future<void> signInWithApple(BuildContext context) async {
+  /// Signs in the user as a demo user, bypassing authentication.
+  ///
+  /// This method provides a way to sign in as a predefined demo user for
+  /// testing and demonstration purposes. No actual authentication is
+  /// performed. This method should not be used in production.
+  ///
+  /// @param context The BuildContext of the current widget tree.
+  /// @throws [Exception] if there is an issue with the demo sign-in process.
+  Future<void> signInAsDemo(BuildContext context) async {
     try {
-      // Check if the platform supports Apple Sign In
-      if (!await SignInWithApple.isAvailable()) {
+      // Sign in anonymously for demo mode
+      final userCredential = await _auth.signInAnonymously();
+      final user = userCredential.user;
+
+      if (user != null) {
+        // Create demo user profile with test role
+        await _firestore.collection('users').doc(user.uid).set(
+          {
+            'uid': user.uid,
+            'email': 'demo@sweepfeed.app',
+            'displayName': 'Demo User',
+            'photoURL': null,
+            'provider': 'demo',
+            'role': 'tester', // Special role for demo users
+            'isDemo': true,
+            'createdAt': FieldValue.serverTimestamp(),
+            'lastSignIn': FieldValue.serverTimestamp(),
+            'onboardingCompleted': false, // Always show onboarding for demo
+
+            // Demo subscription (premium features enabled)
+            'subscription': {
+              'status': 'active',
+              'plan': 'premium', // Give demo users premium access
+              'startDate': FieldValue.serverTimestamp(),
+              'endDate': null,
+              'autoRenew': false,
+              'paymentMethod': 'demo',
+              'lastPaymentDate': null,
+              'nextBillingDate': null,
+              'isDemo': true,
+            },
+
+            // Demo stats and features
+            'sweepstakes': {
+              'entries': [],
+              'history': [],
+              'favorites': [],
+              'wins': [],
+            },
+
+            'preferences': {
+              'categories': [],
+              'country': 'United States',
+              'notificationPreferences': {
+                'email': false,
+                'push': false,
+                'wins': false,
+                'newSweepstakes': false,
+                'reminders': false,
+              },
+            },
+
+            'stats': {
+              'totalEntries': 0,
+              'activeEntries': 0,
+              'totalWins': 0,
+              'winRate': 0,
+              'lastEntryDate': null,
+            },
+
+            'gamification': {
+              'level': 1,
+              'experience': 0,
+              'totalPoints': 0,
+              'badges': {
+                'collected': [],
+                'totalUnlocked': 0,
+              },
+              'streaks': {
+                'current': 0,
+                'longest': 0,
+                'lastCheckIn': null,
+                'freezesAvailable': 0,
+                'freezeUsedToday': false,
+              },
+            },
+          },
+          SetOptions(
+            merge: false,
+          ),
+        ); // Don't merge, overwrite for clean demo state
+
+        // Navigate to onboarding for demo users
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Apple Sign In is not available on this device'),
-              backgroundColor: AppColors.error,
+          // Import needed at top of file
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const PrizePreferencesScreen(),
             ),
+            (route) => false,
           );
         }
-        return;
+      }
+    } catch (e) {
+      logger.e('Demo sign in failed', error: e);
+      rethrow;
+    }
+  }
+
+  /// Signs in the user using their Google account.
+  ///
+  /// This method initiates the Google sign-in flow, allowing users to
+  /// authenticate with their Google credentials.
+  ///
+  /// @param context The BuildContext of the current widget tree.
+  /// @throws [FirebaseAuthException] if the Google sign-in fails.
+  /// @throws [Exception] for other unexpected errors during the process.
+  Future<void> signInWithGoogle(BuildContext context) async {
+    try {
+      // Get secure client ID from configuration
+      final clientId = SecureConfig.googleSignInClientId;
+
+      // Create GoogleSignIn instance with secure serverClientId
+      final googleSignIn = GoogleSignIn(
+        clientId: clientId,
+        scopes: ['email', 'profile'],
+      );
+
+      // Trigger the authentication flow using signIn()
+      final googleUser = await googleSignIn.signIn();
+
+      if (googleUser == null) {
+        // User cancelled the sign-in flow
+        throw Exception('Google sign-in was cancelled by user');
       }
 
-      final credential = await SignInWithApple.getAppleIDCredential(
+      // Get the authentication details
+      final googleAuth = await googleUser.authentication;
+      final idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        throw Exception('Failed to get ID token from Google');
+      }
+
+      // Create a new credential (Firebase Auth only needs idToken for Google)
+      final credential = GoogleAuthProvider.credential(
+        idToken: idToken,
+      );
+
+      // Once signed in, return the UserCredential
+      final userCredential = await _auth.signInWithCredential(credential);
+
+      // Create or update user profile with Google info
+      await _createOrUpdateUserProfile(
+        userCredential.user!,
+        displayName: googleUser.displayName,
+        email: googleUser.email,
+        photoURL: googleUser.photoUrl,
+        provider: 'google.com',
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully signed in with Google!'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      logger.e('Error with Google sign-in', error: e);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google Sign-In failed: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Signs in the user using their Apple account.
+  ///
+  /// This method initiates the Apple sign-in flow, allowing users to
+  /// authenticate with their Apple ID.
+  ///
+  /// @param context The BuildContext of the current widget tree.
+  /// @throws [FirebaseAuthException] if the Apple sign-in fails.
+  /// @throws [Exception] for other unexpected errors during the process.
+  Future<void> signInWithApple(BuildContext context) async {
+    try {
+      // Check if Apple Sign In is available
+      final isAvailable = await SignInWithApple.isAvailable();
+      if (!isAvailable) {
+        throw Exception('Apple Sign-In is not available on this device');
+      }
+
+      // Generate state parameter for CSRF protection
+      final state = _generateNonce();
+      await _secureStorage.write(key: 'apple_signin_state', value: state);
+
+      // Request credential for the user with state parameter
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
-        webAuthenticationOptions: WebAuthenticationOptions(
-          clientId: 'com.sweepfeed.app',
-          redirectUri:
-              Uri.parse('https://sweepfeed.com/callbacks/sign_in_with_apple'),
-        ),
+        state: state,
       );
 
-      final oAuthProvider = OAuthProvider('apple.com');
-      final credentialAuth = oAuthProvider.credential(
-        idToken: credential.identityToken,
-        accessToken: credential.authorizationCode,
+      // Verify state parameter to prevent CSRF attacks
+      final storedState = await _secureStorage.read(key: 'apple_signin_state');
+      if (storedState != state) {
+        await _secureStorage.delete(key: 'apple_signin_state');
+        throw Exception('CSRF Attack Detected!');
+      }
+      await _secureStorage.delete(key: 'apple_signin_state');
+
+      // Create an `OAuthCredential` from the credential returned by Apple.
+      final oauthCredential = OAuthProvider('apple.com').credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
       );
 
-      final UserCredential userCredential =
-          await _auth.signInWithCredential(credentialAuth);
-      final User? user = userCredential.user;
+      // Sign in the user with Firebase
+      final userCredential = await _auth.signInWithCredential(oauthCredential);
 
-      if (user != null) {
-        String? displayName =
-            '${credential.givenName ?? ''} ${credential.familyName ?? ''}'
-                .trim();
-        if (displayName.isEmpty) displayName = null;
+      String? displayName;
+      if (appleCredential.givenName != null &&
+          appleCredential.familyName != null) {
+        final sanitizedGivenName = _sanitizeInput(appleCredential.givenName!);
+        final sanitizedFamilyName = _sanitizeInput(appleCredential.familyName!);
+        displayName = '$sanitizedGivenName $sanitizedFamilyName';
+        await userCredential.user?.updateDisplayName(displayName);
+      }
 
-        await _createOrUpdateUserProfile(
-          user,
-          displayName: displayName ?? user.displayName,
-          email: credential.email ?? user.email,
-          provider: 'apple',
+      await _createOrUpdateUserProfile(
+        userCredential.user!,
+        displayName: displayName ?? userCredential.user?.displayName,
+        email: appleCredential.email ?? userCredential.user?.email,
+        provider: 'apple.com',
+      );
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Successfully signed in with Apple!'),
+            backgroundColor: AppColors.success,
+          ),
         );
-
-        // Navigate to prize preferences screen
-        if (context.mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-                builder: (context) => const PrizePreferencesScreen()),
-          );
-        }
       }
     } catch (e) {
-      print('Error signing in with Apple: $e');
+      logger.e('Error with Apple sign-in', error: e);
+      rethrow;
+    }
+  }
+
+  String _generateNonce([int length = 32]) {
+    final random = Random.secure();
+    const charset =
+        '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
+        .join();
+  }
+
+  String _sanitizeInput(String input) {
+    // Remove HTML tags and special characters to prevent XSS
+    var sanitized = input.replaceAll(RegExp('<[^>]*>'), '');
+    sanitized = sanitized.replaceAll(RegExp(r'[^\w\s]+'), '');
+    return sanitized.trim();
+  }
+
+  /// Verifies the user's phone number and sends a One-Time Password (OTP) via SMS.
+  ///
+  /// This method initiates the phone number verification process, sending an OTP
+  /// to the provided phone number. The user must then enter the OTP to complete
+  /// the verification.
+  ///
+  /// @param phoneNumber The phone number to verify. Must be a valid phone number format.
+  /// @param context The BuildContext of the current widget tree.
+  /// @throws [FirebaseAuthException] if the phone number verification fails.
+  /// @throws [Exception] for other unexpected errors during the process.
+  Future<void> verifyPhoneNumber(
+    String phoneNumber,
+    BuildContext context,
+  ) async {
+    try {
+      await _auth.verifyPhoneNumber(
+        phoneNumber: phoneNumber,
+        verificationCompleted: (credential) async {
+          // Auto-retrieval or instant verification
+          await _auth.signInWithCredential(credential);
+        },
+        verificationFailed: (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Phone number verification failed: ${e.message}'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+          }
+        },
+        codeSent: (verificationId, resendToken) {
+          // Navigate to OTP screen
+          if (context.mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => OTPScreen(verificationId: verificationId),
+              ),
+            );
+          }
+        },
+        codeAutoRetrievalTimeout: (verificationId) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Auto retrieval timed out. Please enter the code manually.',
+                ),
+                backgroundColor: AppColors.warning,
+              ),
+            );
+          }
+        },
+      );
+    } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error signing in with Apple: $e'),
+            content: Text('Error verifying phone number: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -435,129 +875,64 @@ class AuthService {
     }
   }
 
-  // Register with email and password
-  Future<void> registerWithEmail(
-    String email,
-    String password,
-    String name,
-    Map<String, dynamic> userProfile, // This seems to be for other profile details
-    String? referredByCode, // New parameter
+  /// Signs in the user using a verified phone number and the received OTP.
+  ///
+  /// This method completes the phone number sign-in process after the user
+  /// has entered the OTP.
+  ///
+  /// @param verificationId The verification ID received after calling [verifyPhoneNumber].
+  /// @param smsCode The OTP (SMS code) entered by the user.
+  /// @param context The BuildContext of the current widget tree.
+  /// @throws [FirebaseAuthException] if the sign-in fails.
+  /// @throws [Exception] for other unexpected errors during the process.
+  Future<void> signInWithPhoneNumber(
+    String verificationId,
+    String smsCode,
+    BuildContext context,
   ) async {
     try {
-      final userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
+      final AuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: smsCode,
       );
 
-      final user = userCredential.user;
-      if (user != null) {
-        final newUsersReferralCode = _generateReferralCode();
-        // TODO: Add a check for referral code uniqueness in Firestore. 
-        // This is complex client-side and prone to race conditions.
-        // A Cloud Function is better for guaranteeing uniqueness at scale.
-        // For now, we'll proceed without a client-side uniqueness check.
+      final userCredential = await _auth.signInWithCredential(credential);
 
+      if (userCredential.user != null) {
         await _createOrUpdateUserProfile(
-          user,
-          displayName: name,
-          email: email,
-          provider: 'email',
-          referralCode: newUsersReferralCode, // Pass generated code for the new user
-          referredByCode: referredByCode,   // Pass the code they were referred by
-          additionalData: { 
-            // Keep existing additionalData logic
-            'preferences': userProfile['preferences'] ?? {},
-            'country': userProfile['country'] ?? '',
-            'state': userProfile['state'] ?? '',
-            'age': userProfile['age'] ?? 0,
-            // Note: referralCount is initialized to 0 directly in _createOrUpdateUserProfile
-          },
+          userCredential.user!,
+          provider: 'phone',
         );
 
-        // Process referral if a code was provided
-        if (referredByCode != null && referredByCode.isNotEmpty) {
-          await _processReferral(referredByCode, user.uid);
+        // Navigate to prize preferences screen
+        if (context.mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const PrizePreferencesScreen(),
+            ),
+          );
         }
-        
-        // Award "Welcome Aboard" badge
-        await _gamificationService.checkAndAwardWelcomeAboard(user.uid);
-
       }
     } catch (e) {
-      rethrow;
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error signing in with phone number: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
-  String _generateReferralCode({int length = 7}) {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    final random = Random();
-    return String.fromCharCodes(Iterable.generate(
-        length, (_) => chars.codeUnitAt(random.nextInt(chars.length))));
-  }
-
-  Future<void> _processReferral(String referredByCode, String newUserId) async {
-    try {
-      // Find the referring user by their referral code
-      final querySnapshot = await _firestore
-          .collection('users')
-          .where('referralCode', isEqualTo: referredByCode)
-          .limit(1)
-          .get();
-
-      if (querySnapshot.docs.isNotEmpty) {
-        final referrerDoc = querySnapshot.docs.first;
-        final referrerId = referrerDoc.id;
-        final referrerData = referrerDoc.data() as Map<String, dynamic>?;
-
-        // Update referrer's count and points
-        await referrerDoc.reference.update({
-          'referralCount': FieldValue.increment(1),
-        });
-        // Use existing addPoints method for the referrer
-        await addPoints(100, 'Referred new user: $newUserId', referenceId: newUserId, userIdOverride: referrerId);
-
-        // Award points to the new user
-        // Use existing addPoints method for the new user
-        await addPoints(100, 'Signed up with referral from: $referrerId', referenceId: referrerId, userIdOverride: newUserId);
-
-        print('Referral processed for referrer: $referrerId and new user: $newUserId');
-
-        // Check for Referral Rockstar badge for the referrer
-        // Need to fetch the updated referral count, or pass it if available synchronously (which it isn't here directly)
-        // For simplicity, triggering the check. GamificationService will fetch the latest count.
-        await _gamificationService.checkAndAwardReferralRockstar(referrerId);
-
-      } else {
-        print('Referral code "$referredByCode" not found.');
-        // Optionally, store the invalid code on the new user's profile for later analysis?
-        // For now, we just log it.
-      }
-    } catch (e) {
-      print('Error processing referral: $e');
-      // Handle error (e.g., log to a monitoring service)
-    }
-  }
-
-
-  // Sign out
-  Future<void> signOut() async {
-    try {
-      if (await _googleSignIn.isSignedIn()) {
-        await _googleSignIn.signOut();
-      }
-      await _auth.signOut();
-    } catch (e) {
-      debugPrint('Error signing out: $e');
-      rethrow;
-    }
-  }
-
-  // Password reset
-  Future<void> resetPassword(String email) async {
-    await _auth.sendPasswordResetEmail(email: email);
-  }
-
-  // Get user profile data
+  /// Retrieves the user's profile data.
+  ///
+  /// This method fetches the user's profile information from Firestore.
+  ///
+  /// @returns A [Map<String, dynamic>] containing the user's profile data,
+  /// or `null` if the user is not signed in or the profile data is not found.
+  /// @throws [Exception] if there's an error retrieving the profile data.
   Future<Map<String, dynamic>?> getUserProfile() async {
     try {
       if (currentUser != null) {
@@ -567,12 +942,17 @@ class AuthService {
       }
       return null;
     } catch (e) {
-      print('Error fetching user profile: $e');
+      logger.e('Error fetching user profile', error: e);
       return null;
     }
   }
 
-  // Update user profile
+  /// Updates the user's profile data.
+  ///
+  /// This method updates the user's profile information in Firestore.
+  ///
+  /// @param profileData A [Map<String, dynamic>] containing the profile data to update.
+  /// @throws [Exception] if there's an error updating the profile data.
   Future<void> updateUserProfile(Map<String, dynamic> profileData) async {
     try {
       if (currentUser != null) {
@@ -582,12 +962,17 @@ class AuthService {
             .update(profileData);
       }
     } catch (e) {
-      print('Error updating user profile: $e');
+      logger.e('Error updating user profile', error: e);
       rethrow;
     }
   }
 
-  // Update user preferences
+  /// Updates the user's preferences.
+  ///
+  /// This method updates the user's preference settings in Firestore.
+  ///
+  /// @param preferences A [Map<String, dynamic>] containing the preferences to update.
+  /// @throws [Exception] if there's an error updating the preferences.
   Future<void> updateUserPreferences(Map<String, dynamic> preferences) async {
     try {
       if (currentUser != null) {
@@ -596,47 +981,92 @@ class AuthService {
         });
       }
     } catch (e) {
-      print('Error updating user preferences: $e');
+      logger.e('Error updating user preferences', error: e);
       rethrow;
     }
   }
 
-  // Store auth tokens securely (for potential refresh token usage)
+  /// Stores an authentication token securely.
+  ///
+  /// This method stores the authentication token in secure storage for
+  /// potential refresh token usage.
+  ///
+  /// @param token The authentication token to store.
   Future<void> storeAuthToken(String token) async {
-    await _storage.write(key: 'authToken', value: token);
+    await _secureStorage.write(key: 'authToken', value: token);
   }
 
-  // Get stored auth token
-  Future<String?> getAuthToken() async {
-    return await _storage.read(key: 'authToken');
-  }
+  /// Retrieves the stored authentication token.
+  ///
+  /// This method retrieves the authentication token from secure storage.
+  ///
+  /// @returns The stored authentication token, or `null` if no token is stored.
+  Future<String?> getAuthToken() async => _secureStorage.read(key: 'authToken');
 
-  // Delete stored auth token
+  /// Deletes the stored authentication token.
+  ///
+  /// This method removes the authentication token from secure storage.
   Future<void> deleteAuthToken() async {
-    await _storage.delete(key: 'authToken');
+    await _secureStorage.delete(key: 'authToken');
   }
 
   // Add a method to update sweepstake entry
   Future<void> addSweepstakeEntry(
-      String sweepstakeId, Map<String, dynamic> entryData) async {
-    if (currentUser == null) return;
+    String sweepstakeId,
+    Map<String, dynamic> entryData,
+  ) async {
+    try {
+      // Validate inputs
+      if (currentUser == null) {
+        throw const AuthenticationError(
+            'User must be logged in to enter sweepstakes');
+      }
 
-    final entry = {
-      'sweepstakeId': sweepstakeId,
-      'entryDate': FieldValue.serverTimestamp(),
-      'status': 'active', // active, won, lost, expired
-      ...entryData,
-    };
+      if (sweepstakeId.isEmpty) {
+        throw const ValidationError('Sweepstake ID is required');
+      }
 
-    await _firestore.collection('users').doc(currentUser!.uid).update({
-      'sweepstakes.entries': FieldValue.arrayUnion([entry]),
-      'stats.totalEntries': FieldValue.increment(1),
-      'stats.activeEntries': FieldValue.increment(1),
-      'lastActivity': FieldValue.serverTimestamp(),
-    });
+      final entry = {
+        'sweepstakeId': sweepstakeId,
+        'entryDate': FieldValue.serverTimestamp(),
+        'status': 'active', // active, won, lost, expired
+        ...entryData,
+      };
 
-    // After successfully adding an entry, check for "Entry Enthusiast" badge
-    await _gamificationService.checkAndAwardEntryEnthusiast(currentUser!.uid);
+      // Update user document with entry
+      await _firestore.collection('users').doc(currentUser!.uid).update({
+        'sweepstakes.entries': FieldValue.arrayUnion([entry]),
+        'stats.totalEntries': FieldValue.increment(1),
+        'stats.activeEntries': FieldValue.increment(1),
+        'lastActivity': FieldValue.serverTimestamp(),
+      });
+
+      logger.i(
+          'Sweepstake entry added successfully. userId: ${currentUser!.uid}, sweepstakeId: $sweepstakeId');
+
+      // After successfully adding an entry, check for "Entry Enthusiast" badge
+      try {
+        await _gamificationService
+            .checkAndAwardEntryEnthusiast(currentUser!.uid);
+      } catch (e) {
+        // Don't fail the entry if gamification fails
+        logger.w('Gamification service failed after entry', error: e);
+      }
+    } on FirebaseException catch (e) {
+      logger.e('Firebase error adding sweepstake entry', error: e);
+      throw FirestoreError(
+        'Failed to record your entry. Please try again.',
+        rawError: e,
+        context: 'addSweepstakeEntry',
+      );
+    } catch (e) {
+      logger.e('Unexpected error adding sweepstake entry', error: e);
+      throw AppError.fromException(
+        e,
+        context: 'addSweepstakeEntry',
+        customMessage: 'Failed to enter sweepstake. Please try again.',
+      );
+    }
   }
 
   // Add a method to update subscription status
@@ -646,20 +1076,62 @@ class AuthService {
     DateTime? endDate,
     bool autoRenew = false,
   }) async {
-    if (currentUser == null) return;
+    try {
+      // Validate inputs
+      if (currentUser == null) {
+        throw const AuthenticationError(
+            'User must be logged in to update subscription');
+      }
 
-    await _firestore.collection('users').doc(currentUser!.uid).update({
-      'subscription.status': status,
-      'subscription.plan': plan,
-      'subscription.endDate': endDate,
-      'subscription.autoRenew': autoRenew,
-      'lastActivity': FieldValue.serverTimestamp(),
-    });
+      if (status.isEmpty || plan.isEmpty) {
+        throw const ValidationError(
+            'Subscription status and plan are required');
+      }
+
+      // Validate status values
+      const validStatuses = ['trial', 'active', 'expired', 'cancelled'];
+      if (!validStatuses.contains(status)) {
+        throw ValidationError('Invalid subscription status: $status');
+      }
+
+      // Validate plan values
+      const validPlans = ['free', 'basic', 'premium'];
+      if (!validPlans.contains(plan)) {
+        throw ValidationError('Invalid subscription plan: $plan');
+      }
+
+      await _firestore.collection('users').doc(currentUser!.uid).update({
+        'subscription.status': status,
+        'subscription.plan': plan,
+        'subscription.endDate': endDate,
+        'subscription.autoRenew': autoRenew,
+        'lastActivity': FieldValue.serverTimestamp(),
+      });
+
+      logger.i(
+          'Subscription status updated successfully. userId: ${currentUser!.uid}, status: $status, plan: $plan');
+    } on FirebaseException catch (e) {
+      logger.e('Firebase error updating subscription status', error: e);
+      throw FirestoreError(
+        'Failed to update subscription. Please try again.',
+        rawError: e,
+        context: 'updateSubscriptionStatus',
+      );
+    } catch (e) {
+      logger.e('Unexpected error updating subscription status', error: e);
+      throw AppError.fromException(
+        e,
+        context: 'updateSubscriptionStatus',
+        customMessage: 'Failed to update subscription. Please try again.',
+      );
+    }
   }
 
   // Add a method to record a win
   Future<void> recordWin(
-      String sweepstakeId, Map<String, dynamic> winData) async {
+    String sweepstakeId,
+    Map<String, dynamic> winData,
+  ) async {
     if (currentUser == null) return;
 
     final win = {
@@ -761,34 +1233,76 @@ class AuthService {
   }
 
   // Add points to user's account
-  Future<void> addPoints(int amount, String reason,
-      {String? referenceId, String? userIdOverride}) async {
-    // Allow overriding userId for referral processing
-    final targetUserId = userIdOverride ?? currentUser?.uid; 
-    if (targetUserId == null) return;
+  Future<void> addPoints(
+    int amount,
+    String reason, {
+    String? referenceId,
+    String? userIdOverride,
+  }) async {
+    try {
+      // Validate inputs
+      if (amount <= 0) {
+        throw const ValidationError('Points amount must be positive');
+      }
 
-    final transaction = {
-      'amount': amount,
-      'reason': reason,
-      'timestamp': FieldValue.serverTimestamp(),
-      if (referenceId != null) 'referenceId': referenceId,
-    };
+      if (reason.isEmpty) {
+        throw const ValidationError('Reason for points is required');
+      }
 
-    await _firestore.collection('users').doc(targetUserId).update({
-      'gamification.points.total': FieldValue.increment(amount),
-      'gamification.points.available': FieldValue.increment(amount),
-      'gamification.points.history': FieldValue.arrayUnion([transaction]),
-    });
+      // Allow overriding userId for referral processing
+      final targetUserId = userIdOverride ?? currentUser?.uid;
+      if (targetUserId == null) {
+        throw const AuthenticationError('User must be logged in to add points');
+      }
 
-    // Check for level up, only for the current user, not the referred user if userIdOverride is used.
-    if (userIdOverride == null || userIdOverride == currentUser?.uid) {
-      await _checkLevelUp();
+      final transaction = {
+        'amount': amount,
+        'reason': reason,
+        'timestamp': FieldValue.serverTimestamp(),
+        if (referenceId != null) 'referenceId': referenceId,
+      };
+
+      await _firestore.collection('users').doc(targetUserId).update({
+        'gamification.points.total': FieldValue.increment(amount),
+        'gamification.points.available': FieldValue.increment(amount),
+        'gamification.points.history': FieldValue.arrayUnion([transaction]),
+      });
+
+      logger.i(
+          'Points added successfully. targetUserId: $targetUserId, amount: $amount, reason: $reason');
+
+      // Check for level up, only for the current user, not the referred user if userIdOverride is used.
+      if (userIdOverride == null || userIdOverride == currentUser?.uid) {
+        try {
+          await _checkLevelUp();
+        } catch (e) {
+          // Don't fail points addition if level up check fails
+          logger.w('Level up check failed after adding points', error: e);
+        }
+      }
+    } on FirebaseException catch (e) {
+      logger.e('Firebase error adding points', error: e);
+      throw FirestoreError(
+        'Failed to add points. Please try again.',
+        rawError: e,
+        context: 'addPoints',
+      );
+    } catch (e) {
+      logger.e('Unexpected error adding points', error: e);
+      throw AppError.fromException(
+        e,
+        context: 'addPoints',
+        customMessage: 'Failed to add points. Please try again.',
+      );
     }
   }
 
   // Spend points
-  Future<void> spendPoints(int amount, String reason,
-      {String? referenceId}) async {
+  Future<void> spendPoints(
+    int amount,
+    String reason, {
+    String? referenceId,
+  }) async {
     if (currentUser == null) return;
 
     final transaction = {
@@ -875,8 +1389,10 @@ class AuthService {
   }
 
   // Unlock achievement
-  Future<void> unlockAchievement(String achievementId,
-      {int progress = 100}) async {
+  Future<void> unlockAchievement(
+    String achievementId, {
+    int progress = 100,
+  }) async {
     if (currentUser == null) return;
 
     await _firestore.collection('users').doc(currentUser!.uid).update({
@@ -914,7 +1430,7 @@ class AuthService {
     });
 
     // Award challenge completion points
-    const int points = 10;
+    const points = 10;
     await addPoints(points, 'Daily Challenge Completed: $challengeId');
   }
 
@@ -928,8 +1444,164 @@ class AuthService {
       }
       return false;
     } catch (e) {
-      print('Error checking admin status: $e');
+      logger.e('Error checking admin status', error: e);
       return false;
+    }
+  }
+
+  // Register with email and password
+  Future<void> registerWithEmail(
+    String email,
+    String password,
+    String displayName,
+    Map<String, dynamic> userProfile,
+    String? referralCode,
+  ) async {
+    try {
+      // Create Firebase Auth user
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = credential.user;
+      if (user == null) {
+        throw Exception('User creation failed');
+      }
+
+      // Update the user's display name
+      await user.updateDisplayName(displayName);
+
+      // Create user profile with additional data
+      await _createOrUpdateUserProfile(
+        user,
+        displayName: displayName,
+        email: email,
+        provider: 'email',
+        referredByCode: referralCode,
+        additionalData: userProfile,
+      );
+    } catch (e) {
+      logger.e('Error registering with email', error: e);
+      rethrow;
+    }
+  }
+
+  /// Signs out the current user.
+  ///
+  /// This method signs out the currently authenticated user, clearing their
+  /// authentication state.
+  ///
+  /// @throws [FirebaseAuthException] if the sign-out fails.
+  /// @throws [Exception] for other unexpected errors during the process.
+  Future<void> signOut() async {
+    try {
+      // await _googleSignIn.signOut(); // Temporarily disabled - using fallback
+      await _auth.signOut();
+      await deleteAuthToken();
+    } catch (e) {
+      logger.e('Error signing out', error: e);
+      rethrow;
+    }
+  }
+
+  Future<void> _handleSuccessfulSignIn(
+    BuildContext context,
+    UserCredential userCredential,
+  ) async {
+    if (userCredential.user != null) {
+      if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+        await _createOrUpdateUserProfile(userCredential.user!);
+      }
+      await _notificationService.saveTokenToDatabase(userCredential.user!.uid);
+      // After any successful sign in, prompt to enable biometrics
+      await _promptToEnableBiometrics(context, userCredential.user!.email!);
+    }
+  }
+
+  Future<void> deleteAccount() async {
+    // Implement account deletion logic here
+    // This might involve deleting user data from Firestore and then deleting the auth user.
+  }
+
+  /// Checks if biometric authentication is available on the device.
+  Future<bool> isBiometricAvailable() async {
+    try {
+      return await _localAuth.canCheckBiometrics;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Attempts to sign in the user using biometric authentication.
+  Future<bool> signInWithBiometrics() async {
+    try {
+      final isAvailable = await isBiometricAvailable();
+      if (!isAvailable) return false;
+
+      final isAuthenticated = await _localAuth.authenticate(
+        localizedReason: 'Please authenticate to sign in to SweepFeed',
+        options: const AuthenticationOptions(biometricOnly: true),
+      );
+
+      if (isAuthenticated) {
+        final email = await _secureStorage.read(key: 'biometric_email');
+        final token = await _secureStorage.read(
+          key: 'biometric_token',
+        ); // Example: using a refresh token
+
+        if (email != null && token != null) {
+          // Here, you would use the token to re-authenticate with Firebase.
+          // This is a placeholder for the actual re-authentication logic.
+          return true;
+        }
+      }
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// Shows a dialog prompting the user to enable biometric login for the future.
+  Future<void> _promptToEnableBiometrics(
+    BuildContext context,
+    String email,
+  ) async {
+    final isAvailable = await isBiometricAvailable();
+    if (isAvailable && context.mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Enable Biometric Sign-In?'),
+          content: const Text(
+            'Would you like to use your fingerprint or Face ID to sign in next time?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('No, thanks'),
+            ),
+            TextButton(
+              onPressed: () async {
+                // Save credentials to secure storage
+                await _secureStorage.write(
+                  key: 'biometric_email',
+                  value: email,
+                );
+                await _secureStorage.write(
+                  key: 'biometric_token',
+                  value: await _auth.currentUser!.getIdToken(),
+                ); // Example
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Biometric sign-in enabled!')),
+                );
+              },
+              child: const Text('Enable'),
+            ),
+          ],
+        ),
+      );
     }
   }
 }

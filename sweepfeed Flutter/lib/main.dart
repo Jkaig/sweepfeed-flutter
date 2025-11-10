@@ -1,376 +1,280 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'config/firebase_config.dart';
-import 'features/auth/screens/login_screen.dart';
-import 'features/onboarding/screens/splash_screen.dart'; 
-import 'features/onboarding/screens/onboarding_screen_1.dart'; // Import for AuthWrapper
-import 'features/contests/screens/home_screen.dart';
-import 'features/tracking/screens/tracking_screen.dart';
-import 'features/notifications/screens/notification_preferences_screen.dart';
-import 'features/saved/screens/saved_screen.dart';
-import 'features/profile/screens/profile_screen.dart';
-import 'features/notifications/services/notification_service.dart';
-import 'features/tracking/services/tracking_service.dart';
-import 'features/saved/services/saved_sweepstakes_service.dart';
-import 'features/contests/services/contest_service.dart';
-import 'features/subscription/services/subscription_service.dart';
-import 'features/subscription/services/usage_limits_service.dart';
-import 'features/ads/services/ad_service.dart';
-import 'features/ads/widgets/ad_banner.dart';
-// import 'features/subscription/widgets/trial_banner.dart'; // Combined into ActiveTrialBanner
-import 'features/subscription/widgets/active_trial_banner.dart'; // Assuming this exists or is the correct one
-import 'core/navigation/navigator_key.dart';
-// import 'core/services/firebase_service.dart'; // FirebaseService seems unused directly here
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'core/analytics/analytics_service.dart';
-import 'core/theme/app_theme.dart'; // Import AppTheme
-import 'core/providers/theme_provider.dart'; // Import ThemeProvider
-import 'features/premium/screens/daily_entry_screen.dart';
-import 'features/notifications/services/push_notification_service.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart' show PlatformDispatcher;
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'core/navigation/navigator_key.dart';
+import 'core/providers/providers.dart';
+import 'core/services/app_initialization_manager.dart';
+import 'core/services/fcm_service.dart';
+import 'core/services/isolate_data_loader.dart';
+import 'core/services/notification_service.dart';
+import 'core/theme/app_theme.dart';
+// Core services and utilities
+import 'core/utils/logger.dart';
+import 'core/widgets/anr_free_loading_screen.dart';
+// Feature widgets
+import 'features/ads/widgets/ad_banner.dart';
+import 'features/auth/screens/login_screen.dart';
+import 'features/navigation/screens/main_navigation_wrapper.dart';
+import 'features/onboarding/screens/adaptive_onboarding_wrapper.dart';
+// Feature screens
+import 'features/onboarding/screens/splash_screen.dart';
 import 'features/subscription/screens/subscription_screen.dart';
-import 'dart:io' show Platform;
-import 'package:firebase_storage/firebase_storage.dart';
+import 'features/subscription/widgets/active_trial_banner.dart';
+import 'features/subscription/widgets/trial_banner.dart';
 
-
-void main() async {
+/// The main function, entry point of the application.
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Load environment variables
-  await dotenv.load(fileName: ".env");
+  try {
+    // Initialize critical services for fast app startup
+    final initManager = AppInitializationManager();
+    await initManager.initializeCritical();
 
-  // Initialize Firebase with options
-  await Firebase.initializeApp(
-    options: FirebaseConfig.platformOptions,
-  );
+    // Pass all uncaught "fatal" errors from the framework to Crashlytics
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-  // Check for USE_EMULATOR flag
-  const useEmulator = bool.fromEnvironment('USE_EMULATOR');
+    // Pass all uncaught asynchronous errors that aren't handled by the Flutter framework
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
 
-  if (useEmulator) {
-    // Determine host based on platform
-    final String host = Platform.isAndroid ? '10.0.2.2' : 'localhost';
+    // Initialize Notification Service
+    final notificationService = NotificationService();
+    await notificationService.init();
+    final fcmToken = await notificationService.getFcmToken();
+    logger.d('FCM Token: $fcmToken');
 
-    // Configure Firebase to use emulators
-    try {
-      await FirebaseAuth.instance.useAuthEmulator(host, 9099);
-      FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
-      await FirebaseStorage.instance.useStorageEmulator(host, 9199);
-      print("Firebase Emulators configured for $host");
-    } catch (e) {
-      print("Error configuring Firebase Emulators: $e");
-      // Depending on the app's requirements, you might want to handle this error
-      // differently, e.g., by preventing the app from running.
-    }
+    // Initialize FCM service for social features
+    await fcmService.initialize();
+
+    logger.d('Critical initialization completed');
+
+    // Start background initialization (non-blocking)
+    unawaited(initManager.initializeBackground());
+
+    // Start data loading in isolate (non-blocking)
+    unawaited(IsolateDataLoader().loadContestDataAsync());
+  } on Exception catch (e) {
+    logger.e('Initialization error: $e');
+    // Continue anyway - app can still start with basic functionality
   }
 
-  final prefs = await SharedPreferences.getInstance();
+  // Get SharedPreferences instance
+  final prefs =
+      AppInitializationManager().prefs ?? await SharedPreferences.getInstance();
 
-  // Initialize services
-  final subscriptionService = SubscriptionService();
-  await subscriptionService.initialize();
-
-  final usageLimitsService = UsageLimitsService();
-  await usageLimitsService.initialize();
-
-  final adService = AdService();
-  await adService.initialize();
-
-  // Initialize PushNotificationService
-  PushNotificationService();
-
-  // Create ThemeProvider instance with SharedPreferences
-  final themeProvider = ThemeProvider(prefs);
-  // No need to await loadThemeMode here, it's handled in constructor
-
-  runApp(MyApp(prefs: prefs, themeProvider: themeProvider));
+  runApp(
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWith((ref) => prefs),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
-class MyApp extends StatelessWidget {
-  final SharedPreferences prefs;
-  final ThemeProvider themeProvider;
-
-  const MyApp({super.key, required this.prefs, required this.themeProvider});
+/// The root widget of the application.
+class MyApp extends ConsumerWidget {
+  /// Constructs a [MyApp] widget.
+  const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final analyticsService = AnalyticsService();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeManager = ref.watch(themeProvider);
+    final analyticsService = ref.watch(analyticsServiceProvider);
+    final appSettings = ref.watch(appSettingsProvider);
 
-    return MultiProvider(
-      providers: [
-        StreamProvider<User?>.value(
-          value: FirebaseAuth.instance.authStateChanges(),
-          initialData: null,
-        ),
-        ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider), // Use existing instance
-        Provider<AnalyticsService>(create: (_) => analyticsService),
-        Provider<ContestService>(
-            create: (_) => ContestService(FirebaseService()), // Assuming ContestService needs FirebaseService
-            lazy: false),
-        ChangeNotifierProvider<TrackingService>(
-          create: (_) => TrackingService(prefs),
-        ),
-        Provider<NotificationService>(
-          create: (_) => NotificationService(prefs),
-        ),
-        Provider<SavedSweepstakesService>(
-            create: (_) => SavedSweepstakesService(prefs)),
-        ChangeNotifierProvider<SubscriptionService>(
-          create: (_) => SubscriptionService(),
-        ),
-        ChangeNotifierProvider<UsageLimitsService>(
-          create: (_) => UsageLimitsService(),
-        ),
-        ChangeNotifierProvider<AdService>(
-          create: (_) => AdService(),
-        ),
-      ],
-      child: Consumer<ThemeProvider>( // Consume ThemeProvider
-        builder: (context, themeManager, _) {
-          return MaterialApp(
-            navigatorKey: navigatorKey,
-            title: 'SweepFeed',
-            theme: AppTheme.lightTheme(), // Set light theme
-            darkTheme: AppTheme.darkTheme(), // Set dark theme
-            themeMode: themeManager.themeMode, // Set theme mode from provider
-            navigatorObservers: [analyticsService.getAnalyticsObserver()],
-            routes: {
-              '/subscription': (context) => const SubscriptionScreen(),
-            },
-            home: const SplashScreen(), // Start with SplashScreen
-          );
-        },
+    final fontScale = appSettings.fontSize / 16.0;
+
+    return MaterialApp(
+      navigatorKey: navigatorKey,
+      title: 'SweepFeed',
+      theme: AppTheme.lightTheme(
+        accentColor: appSettings.accentColorValue,
+        fontScale: fontScale,
+      ),
+      darkTheme: AppTheme.darkTheme(
+        accentColor: appSettings.accentColorValue,
+        fontScale: fontScale,
+      ),
+      themeMode: themeManager.themeMode,
+      navigatorObservers: [analyticsService.getAnalyticsObserver()],
+      // localizationsDelegates: const [
+      //   AppLocalizations.delegate,
+      //   GlobalMaterialLocalizations.delegate,
+      //   GlobalWidgetsLocalizations.delegate,
+      //   GlobalCupertinoLocalizations.delegate,
+      // ],
+      // supportedLocales: const [
+      //   Locale('en'), // English
+      //   Locale('es'), // Spanish
+      // ],
+      routes: {
+        '/subscription': (context) => const SubscriptionScreen(),
+      },
+      home: const ANRFreeAppWrapper(
+        app: SplashScreen(),
       ),
     );
   }
 }
 
-// Wrapper to handle user authentication and async operations before MainScreen
-class AuthWrapper extends StatefulWidget {
+/// Wrapper to handle user authentication and routing
+class AuthWrapper extends ConsumerWidget {
+  /// Constructs a [AuthWrapper] widget.
   const AuthWrapper({super.key});
 
   @override
-  _AuthWrapperState createState() => _AuthWrapperState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authStateChangesProvider);
 
-class _AuthWrapperState extends State<AuthWrapper> {
-  @override
-  void initState() {
-    super.initState();
-    _checkAuthAndNavigate();
-  }
+    return authState.when(
+      data: (user) {
+        if (user == null) {
+          return const LoginScreen();
+        }
 
-  Future<void> _checkAuthAndNavigate() async {
-    // Wait for the frame to render to ensure context is available for navigation
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final user = Provider.of<User?>(context, listen: false);
-      if (user == null) {
-        // If user is null, navigate to LoginScreen
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
+        // User is logged in, check onboarding status
+        return FutureBuilder<DocumentSnapshot>(
+          future: FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get()
+              .timeout(const Duration(seconds: 5)),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const _LoadingScreen(message: 'Loading user data...');
+            }
+
+            if (snapshot.hasError ||
+                !snapshot.hasData ||
+                !snapshot.data!.exists) {
+              return const AdaptiveOnboardingWrapper();
+            }
+
+            final userData = snapshot.data!.data() as Map<String, dynamic>?;
+            final onboardingCompleted =
+                userData?['onboardingCompleted'] as bool? ?? false;
+
+            return onboardingCompleted
+                ? const MainScreen()
+                : const AdaptiveOnboardingWrapper();
+          },
         );
-        return;
-      }
-
-      // User is logged in, proceed with user setup and onboarding check
-      await _handleUserSetup(user);
-
-      // Check onboarding status
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      final onboardingCompleted = userDoc.data()?['onboardingCompleted'] ?? false;
-
-      if (onboardingCompleted) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const MainScreen()),
-        );
-      } else {
-        // This is where SplashScreen would have already navigated to OnboardingScreen1.
-        // If SplashScreen is the entry point, this AuthWrapper might need to be initiated *after* SplashScreen.
-        // For now, assuming SplashScreen handles the initial navigation to OnboardingScreen1,
-        // and AuthWrapper is primarily for deciding between LoginScreen and MainScreen/Onboarding.
-        // The logic in SplashScreen's initState will handle the first step of onboarding.
-        // If a user lands here directly (e.g. after login), and onboarding isn't complete,
-        // they should also be directed to the start of onboarding.
-        // However, SplashScreen is now the main entry.
-        // This AuthWrapper's role changes slightly. It's now more of a decider post-splash/post-login.
-
-        // If SplashScreen is the initial route, it will navigate to OnboardingScreen1.
-        // If for some reason, the flow comes here and onboarding is not complete,
-        // it implies that the SplashScreen logic should handle it.
-        // This AuthWrapper might be better placed after SplashScreen if direct navigation is needed here.
-        // Let's adjust main.dart to have SplashScreen as home, which navigates.
-        // AuthWrapper will be used if we need to decide between Login and MainScreen AFTER splash.
-        // The current setup: main.dart's home is SplashScreen.
-        // SplashScreen navigates to OnboardingScreen1.
-        // Onboarding screens navigate among themselves, then to PrizePreferencesScreen.
-        // PrizePreferencesScreen navigates to HomeScreen (MainScreen).
-        // If a user is logged in and onboarding is complete, they should go to MainScreen.
-        // If not logged in, LoginScreen.
-        // This AuthWrapper will be simplified or re-purposed.
-        // For now, if SplashScreen is home, AuthWrapper is implicitly by-passed initially.
-        // Let's assume SplashScreen is the entry point and handles the initial navigation.
-        // The existing AuthWrapper is being replaced by the SplashScreen logic for initial routing.
-        // The home of MaterialApp is now SplashScreen.
-        // SplashScreen will check auth status internally for its navigation.
-        // So, the logic within AuthWrapper for navigation might be redundant if SplashScreen handles it.
-
-        // The `home` of `MaterialApp` is `SplashScreen`.
-        // `SplashScreen` will decide whether to go to `OnboardingScreen1` or `AuthWrapper`.
-        // `AuthWrapper` will then decide `LoginScreen` or `MainScreen`.
-
-        // Let's refine SplashScreen to navigate to AuthWrapper if login is needed,
-        // or OnboardingScreen1 if logged in & onboarding not complete.
-        // For now, the current change sets SplashScreen as home.
-        // AuthWrapper's build method will be simplified.
-        // It just decides between LoginScreen and MainScreen based on user auth state.
-        // The onboarding check will be implicitly handled by SplashScreen -> Onboarding flow.
-      }
-    });
-  }
-
-  Future<void> _handleUserSetup(User user) async {
-    // Ensure context is still valid if this is called from initState or similar
-    if (!mounted) return;
-
-    Provider.of<AnalyticsService>(context, listen: false)
-        .setUserProperties(userId: user.uid);
-    
-    final notificationService = Provider.of<NotificationService>(context, listen: false);
-    try {
-      final token = await notificationService.getToken();
-      if (token != null) {
-        final userDocRef = FirebaseFirestore.instance.collection('users').doc(user.uid);
-        final docSnapshot = await userDocRef.get();
-        final now = FieldValue.serverTimestamp();
-        
-        Map<String, dynamic> updateData = { // Changed to updateData for clarity
-          'fcmToken': token,
-          'lastActivity': now,
-        };
-
-        if (!docSnapshot.exists || !docSnapshot.data()!.containsKey('createdAt')) {
-          // New user or document missing essential fields like createdAt
-          // Set initial fields including onboardingCompleted: false
-          updateData.addAll({
-            'uid': user.uid,
-            'email': user.email,
-            'displayName': user.displayName,
-            'createdAt': now,
-            'onboardingCompleted': false, 
-          });
-          await userDocRef.set(updateData, SetOptions(merge: true)); 
-        } else {
-          // Existing user, update specific fields
-          // Ensure onboardingCompleted is set if it's missing
-          if (!docSnapshot.data()!.containsKey('onboardingCompleted')) {
-            updateData['onboardingCompleted'] = false;
-          }
-          await userDocRef.update(updateData);
-        }
-      }
-    } catch (e) {
-      debugPrint("Error in _handleUserSetup: $e");
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final user = Provider.of<User?>(context);
-
-    if (user == null) {
-      return const LoginScreen(); 
-    }
-    
-    // User is logged in. _handleUserSetup would have been called.
-    // Now, determine navigation based on onboarding status from Firestore.
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
-        if (snapshot.hasError) {
-           debugPrint("Error fetching user document in AuthWrapper: ${snapshot.error}");
-           return const LoginScreen(); // Fallback to login on error
-        }
-        if (!snapshot.hasData || !snapshot.data!.exists) {
-          // This case should ideally be handled by _handleUserSetup creating the document.
-          // If it still occurs, it's an inconsistent state. Fallback to login.
-          debugPrint("User document not found in AuthWrapper, though user is logged in.");
-          return const LoginScreen(); 
-        }
-
-        final userData = snapshot.data!.data() as Map<String, dynamic>?;
-        // Default to false if 'onboardingCompleted' is missing or null.
-        final onboardingCompleted = userData?['onboardingCompleted'] as bool? ?? false;
-
-        if (onboardingCompleted) {
-          return const MainScreen();
-        } else {
-          // User is logged in, but onboarding is not complete.
-          // SplashScreen should ideally route here, but if AuthWrapper is hit directly,
-          // ensure navigation to OnboardingScreen1.
-          return const OnboardingScreen1();
-        }
       },
+      loading: () =>
+          const _LoadingScreen(message: 'Checking authentication...'),
+      error: (error, stack) => const LoginScreen(),
     );
   }
 }
 
-class MainScreen extends StatefulWidget {
+/// Reusable loading screen widget
+class _LoadingScreen extends StatelessWidget {
+  /// Constructs a [_LoadingScreen] widget.
+  const _LoadingScreen({required this.message});
+
+  /// The message to display on the loading screen.
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 16),
+              Text(message),
+            ],
+          ),
+        ),
+      );
+}
+
+/// The main screen of the application.
+class MainScreen extends ConsumerStatefulWidget {
+  /// Constructs a [MainScreen] widget.
   const MainScreen({super.key});
 
   @override
-  _MainScreenState createState() => _MainScreenState();
+  ConsumerState<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
-  int _currentIndex = 0;
+class _MainScreenState extends ConsumerState<MainScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _checkDailyLoginBonus();
+  }
+
+  /// Checks and awards the daily login bonus to the user.
+  Future<void> _checkDailyLoginBonus() async {
+    final currentUser = ref.read(firebaseServiceProvider).currentUser;
+    if (currentUser == null) return;
+
+    final dustBunniesService = ref.read(dustBunniesServiceProvider);
+    final reward = await dustBunniesService.awardDustBunnies(
+      userId: currentUser.uid,
+      action: 'daily_login',
+    );
+    final awarded = reward.pointsAwarded > 0;
+
+    if (awarded && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.stars, color: Colors.white, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Daily Login Bonus!',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      '+10 SweepPoints earned',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF00D9FF),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final subscriptionService = Provider.of<SubscriptionService>(context);
-    final isPremiumUser = subscriptionService.hasBasicOrPremiumAccess;
-    final showAds = !subscriptionService.isSubscribed;
-
-    final screens = [
-      const HomeScreen(),
-      // Show DailyEntryScreen if premium, otherwise TrackingScreen
-      isPremiumUser ? const DailyEntryScreen() : const TrackingScreen(),
-      const SavedScreen(),
-      const ProfileScreen(),
-    ];
-
-    final navItems = [
-      const BottomNavigationBarItem(
-        icon: Icon(Icons.home),
-        label: 'Home',
-      ),
-      // Show different item for premium
-      isPremiumUser
-          ? const BottomNavigationBarItem(
-              icon: Icon(Icons.checklist),
-              label: 'Daily List',
-            )
-          : const BottomNavigationBarItem(
-              icon: Icon(Icons.list_alt),
-              label: 'My Entries',
-            ),
-      const BottomNavigationBarItem(
-        icon: Icon(Icons.bookmark),
-        label: 'Saved',
-      ),
-      const BottomNavigationBarItem(
-        icon: Icon(Icons.person),
-        label: 'Profile',
-      ),
-    ];
+    final subscriptionService = ref.watch(subscriptionServiceProvider);
 
     return Scaffold(
-      // Access the screen using the current index
       body: Column(
         children: [
           // Show trial banner based on subscription status
@@ -381,23 +285,12 @@ class _MainScreenState extends State<MainScreen> {
           // Show active trial banner for users in trial period
           if (subscriptionService.isInTrialPeriod) const ActiveTrialBanner(),
 
-          // Main content
-          Expanded(
-            child: IndexedStack(
-              index: _currentIndex,
-              children: screens,
-            ),
-          ),
+          // Main content - IdealHomeScreen with cyan borders design
+          const Expanded(child: MainNavigationWrapper()),
 
           // Ad banner at the bottom for free users
-          if (showAds) const AdBanner(height: 50), // Ensure AdBanner is compatible with theme changes
+          if (!subscriptionService.isSubscribed) const AdBanner(height: 50),
         ],
-      ),
-      bottomNavigationBar: BottomNavigationBar( // Ensure BottomNavigationBar is styled by theme
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        type: BottomNavigationBarType.fixed,
-        items: navItems, // Use dynamic nav items
       ),
     );
   }

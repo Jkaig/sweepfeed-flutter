@@ -1,0 +1,305 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Security functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidUserId(userId) {
+      // Prevent path traversal attacks
+      return userId.matches('^[a-zA-Z0-9]{20,128}$') && 
+             !userId.matches('.*\\.\\./.*') && 
+             !userId.matches('.*\\./.*');
+    }
+    
+    function isPremiumUser() {
+      return isAuthenticated() && 
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tier == 'premium' ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tier == 'vip');
+    }
+    
+    function isBasicUser() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tier == 'basic';
+    }
+    
+    function hasBasicOrHigher() {
+      return isAuthenticated() && 
+             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tier in ['basic', 'premium', 'vip']);
+    }
+    
+    function isWithinDailyLimit() {
+      // Check if user has exceeded daily notification limit (free users only)
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      let isPremium = userDoc.data.tier == 'premium' || userDoc.data.tier == 'vip';
+      
+      if (isPremium) {
+        return true;
+      }
+      
+      let today = request.time.toMillis() / 86400000; // Convert to days
+      let todayStr = string(today);
+      
+      // Use getAfter to check the state after the write operation
+      // This prevents race conditions by evaluating the final state
+      let afterDoc = getAfter(/databases/$(database)/documents/users/$(request.auth.uid)/notification_logs/$(todayStr));
+      
+      if (afterDoc == null) {
+        return true; // No log after write means first notification
+      }
+      
+      let totalNotifications = (afterDoc.data.get('newSweepstakes', 0) + 
+                               afterDoc.data.get('endingSoon', 0) +
+                               afterDoc.data.get('highValue', 0) +
+                               afterDoc.data.get('wins', 0) +
+                               afterDoc.data.get('dailyDigest', 0) +
+                               afterDoc.data.get('weeklyRoundup', 0) +
+                               afterDoc.data.get('personalizedAlerts', 0) +
+                               afterDoc.data.get('securityAlerts', 0));
+      
+      return totalNotifications <= 5; // Free user daily limit (changed to <= to be more restrictive)
+    }
+
+    function _validateNotificationIncrements(newData, oldData) {
+      // Validate that notification counts only increase by 1 or less per operation
+      let notificationTypes = ['newSweepstakes', 'endingSoon', 'highValue', 'wins', 'dailyDigest', 'weeklyRoundup', 'personalizedAlerts', 'securityAlerts'];
+      
+      return notificationTypes.all(type, 
+        newData.get(type, 0) <= (oldData.get(type, 0) + 1) &&
+        newData.get(type, 0) >= oldData.get(type, 0)
+      );
+    }
+
+    // User documents - strict access control with gamification protection
+    match /users/{userId} {
+      allow read: if isOwner(userId) && isValidUserId(userId);
+      
+      allow create: if isOwner(userId) && 
+                       isValidUserId(userId) &&
+                       request.resource.data.keys().hasAll(['tier', 'createdAt']) &&
+                       request.resource.data.tier in ['free', 'basic', 'premium', 'vip'] &&
+                       request.resource.data.tier == 'free';
+      
+      allow update: if isOwner(userId) && 
+                       isValidUserId(userId) &&
+                       // Prevent modification of critical fields by client (including SweepPoints and subscription data)
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['tier', 'premiumUntil', 'vipAccess', 'sweepPointsSystem', 'xpSystem', 'isSubscribed', 'subscriptionId', 'subscriptionPurchaseDate', 'subscriptionExpiryDate', 'subscriptionTier', 'subscriptionReceipt', 'trialStarted', 'trialStartDate', 'trialExpiryDate', 'cancellationRequested', 'tierUpdatedAt', 'lastPurchaseDate', 'subscriptionCancelledAt', 'subscriptionStatus', 'lastBillingIssueAt']) ||
+                       // Allow modification of notification settings only
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notificationSettings', 'encryptedFcmToken', 'fcmTokenHash', 'fcmTokenUpdatedAt', 'encryptionVersion', 'tokenSecurityLevel']);
+      
+      allow delete: if false; // Users cannot delete their own documents
+      
+      // Server-side confirmation subcollection (only Cloud Functions can write)
+      match /server_side_confirmation/{confirmationType} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+      
+      // Notification logs subcollection
+      match /notification_logs/{logId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && 
+                                 isWithinDailyLimit() &&
+                                 // Only allow incrementing notification counts
+                                 request.resource.data.keys().hasAll(['lastUpdated']) &&
+                                 request.resource.data.keys().hasAny(['newSweepstakes', 'endingSoon', 'highValue', 'wins', 'dailyDigest', 'weeklyRoundup', 'personalizedAlerts', 'securityAlerts']) &&
+                                 // Ensure increments are reasonable (max 1 per operation)
+                                 _validateNotificationIncrements(request.resource.data, resource.data);
+        allow delete: if false;
+      }
+      
+      // Notification history subcollection
+      match /notification_history/{historyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         request.resource.data.keys().hasAll(['sweepstakeId', 'type', 'sentAt', 'title', 'body']);
+        allow update, delete: if false; // History is immutable
+      }
+      
+      // SweepPoints history subcollection - audit trail protection
+      match /sweepPointsHistory/{historyId} {
+        allow read: if isOwner(userId);
+        allow create: if false; // Only server can create SP history entries
+        allow update, delete: if false; // History is immutable
+      }
+      
+      // Level-up rewards subcollection - prevent abuse
+      match /rewards/{rewardId} {
+        allow read: if isOwner(userId);
+        
+        // Users can only claim rewards (update "claimed" field from false to true)
+        allow update: if isOwner(userId) &&
+                         request.resource.data.keys().hasOnly(['claimed']) &&
+                         request.resource.data.claimed is bool &&
+                         resource.data.claimed == false &&
+                         request.resource.data.claimed == true;
+        
+        allow create, delete: if false; // Only server can create/delete rewards
+      }
+      
+      // Saved contests subcollection - tier-based limits
+      match /saved_contests/{contestId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && 
+                         // Check tier-based limits (enforced by client logic)
+                         request.resource.data.keys().hasAll(['contestId', 'savedAt']);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+      
+      // User analytics subcollection - read-only for users
+      match /analytics/{analyticsId} {
+        allow read: if isOwner(userId) && hasBasicOrHigher(); // Only Basic+ users can see analytics
+        allow create, update, delete: if false; // Only server can manage analytics
+      }
+      
+      // Entry history subcollection - tier-based retention
+      match /entry_history/{entryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         request.resource.data.keys().hasAll(['contestId', 'enteredAt']);
+        allow update, delete: if false; // Entry history is immutable
+      }
+      
+      // Filter presets subcollection - tier-based limits
+      match /filter_presets/{presetId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && hasBasicOrHigher() && // Only Basic+ users can save filters
+                         request.resource.data.keys().hasAll(['name', 'filters', 'createdAt']);
+        allow update: if isOwner(userId) && hasBasicOrHigher();
+        allow delete: if isOwner(userId) && hasBasicOrHigher();
+      }
+    }
+
+    // High value sweepstakes - VIP early access enforcement  
+    match /high_value_sweepstakes/{sweepstakeId} {
+      // Enhanced VIP access check - only VIP users can read during early access
+      allow read: if isAuthenticated() && 
+                     (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tier == 'vip' || 
+                      !isInVipEarlyAccessWindow(sweepstakeId));
+      
+      allow create: if false; // Only server can create these
+      allow update: if false; // Only server can update these
+      allow delete: if false;
+      
+      function isInVipEarlyAccessWindow(sweepId) {
+        let sweepDoc = get(/databases/$(database)/documents/high_value_sweepstakes/$(sweepId));
+        let vipNotificationTime = sweepDoc.data.get('vipNotificationTime', null);
+        
+        if (vipNotificationTime == null) {
+          return false;
+        }
+        
+        let windowEnd = vipNotificationTime.toMillis() + (24 * 60 * 60 * 1000); // 24 hours
+        return request.time.toMillis() < windowEnd;
+      }
+    }
+
+    // Notification queue - server-side only
+    match /notification_queue/{queueId} {
+      allow read, write: if false; // Only server functions can access
+    }
+
+    // Contest data - read-only for users
+    match /contests/{contestId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only admin/server can modify contests
+    }
+
+    // Admin functions - restricted access
+    match /admin/{document=**} {
+      allow read, write: if isAuthenticated() && 
+                            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('adminAccess', false) == true;
+    }
+
+    // Rate limiting collection
+    match /rate_limits/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) &&
+                              request.resource.data.keys().hasAll(['lastRequest', 'requestCount', 'windowStart']);
+      allow delete: if false;
+    }
+
+    // Security audit logs
+    match /security_logs/{logId} {
+      allow read, write: if false; // Only server functions can access
+    }
+    
+    // Webhook logs (server-side only)
+    match /webhook_logs/{logId} {
+      allow read, write: if false; // Only server functions can access
+    }
+    
+    // Webhook errors (server-side only)
+    match /webhook_errors/{errorId} {
+      allow read, write: if false; // Only server functions can access
+    }
+    
+    // Subscription analytics (read-only for admins, write for server)
+    match /subscription_analytics/{analyticsId} {
+      allow read: if isAuthenticated() && 
+                     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('adminAccess', false) == true;
+      allow write: if false; // Only server functions can write
+    }
+
+    // Gamification leaderboard - tier-based access
+    match /leaderboard/{document} {
+      allow read: if isAuthenticated() && hasBasicOrHigher(); // Only Basic+ users can access leaderboards
+      allow write: if false; // Only server can update leaderboard
+    }
+    
+    // Social challenges - tier-based access
+    match /social_challenges/{challengeId} {
+      allow read: if isAuthenticated() && hasBasicOrHigher(); // Only Basic+ users can see challenges
+      allow write: if false; // Only server can manage challenges
+    }
+    
+    // Subscription plans - public read access
+    match /subscription_plans/{planId} {
+      allow read: if true; // Public access to view available plans
+      allow write: if false; // Only server can manage plans
+    }
+    
+    // Premium contests - Premium tier access only
+    match /premium_contests/{contestId} {
+      allow read: if isAuthenticated() && isPremiumUser(); // Only Premium users can access
+      allow write: if false; // Only server can manage premium contests
+    }
+    
+    // Auto-entry schedules - Premium tier only
+    match /auto_entry_schedules/{scheduleId} {
+      allow read: if isAuthenticated() && isPremiumUser() && 
+                     resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isPremiumUser() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.keys().hasAll(['contestId', 'scheduledTime', 'userId']);
+      allow update: if isAuthenticated() && isPremiumUser() &&
+                       resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && isPremiumUser() &&
+                       resource.data.userId == request.auth.uid;
+    }
+    
+    // Daily challenges - read-only for users
+    match /daily_challenges/{document} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only server can manage challenges
+    }
+    
+    // User achievements - read-only for users
+    match /achievements/{document} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only server can manage achievements
+    }
+
+    // Default deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

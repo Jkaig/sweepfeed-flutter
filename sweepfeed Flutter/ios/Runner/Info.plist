@@ -62,5 +62,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SweepFeed needs access to your photo library to let you upload a profile picture.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SweepFeed needs access to your camera to let you take a profile picture.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>SweepFeed uses Face ID to securely authenticate you into your account.</string>
 </dict>
 </plist>

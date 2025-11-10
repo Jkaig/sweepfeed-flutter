@@ -6,35 +6,26 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/navigation/navigator_key.dart';
+import '../../../core/utils/logger.dart';
 import '../../contests/screens/contest_detail_screen.dart';
 
 class NotificationService {
-  static const String _prefsKey = 'notification_preferences';
-  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance; 
+  NotificationService(this._prefs) {
+    _initializeNotifications();
+  }
+  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   final SharedPreferences _prefs;
 
-  NotificationService(this._prefs) {
-    _initializeNotifications();
-  }
-
   Future<void> _initializeNotifications() async {
     // Request permission for notifications
-    await _firebaseMessaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    await _firebaseMessaging.requestPermission();
 
     // Initialize local notifications
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+    const iosSettings = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
@@ -58,7 +49,7 @@ class NotificationService {
   }
 
   Future<void> _handleNotificationTap(RemoteMessage message) async {
-    print("Handling notification tap: ${message.data}");
+    logger.d('Handling notification tap: ${message.data}');
     // Extract contestId from data payload
     final contestId = message.data['contestId'] as String?;
 
@@ -70,7 +61,7 @@ class NotificationService {
         ),
       );
     } else {
-      print("Notification tap data did not contain a contestId.");
+      logger.w('Notification tap data did not contain a contestId.');
       // Handle other notification types or general navigation if needed
     }
   }
@@ -102,15 +93,16 @@ class NotificationService {
     );
   }
 
- // Notification Preferences
+  // Notification Preferences
   Future<void> savePreference(String key, bool value) async {
     await _prefs.setBool(key, value);
   }
-  
+
   Future<bool> loadPreference(String key) async {
     return _prefs.getBool(key) ?? true; // Default to true if not set
   }
-    Future<Map<String, bool>> loadPreferences() async {
+
+  Future<Map<String, bool>> loadPreferences() async {
     final preferences = <String, bool>{};
     preferences['new_sweepstakes'] = await loadPreference('new_sweepstakes');
     preferences['ending_soon'] = await loadPreference('ending_soon');
@@ -127,9 +119,7 @@ class NotificationService {
   }
 
   // Token Management
-  Future<String?> getToken() async {
-    return await _firebaseMessaging.getToken();
-  }
+  Future<String?> getToken() async => _firebaseMessaging.getToken();
 
   Future<void> deleteToken() async {
     await _firebaseMessaging.deleteToken();

@@ -1,22 +1,23 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Required for Timestamp
-import 'package:sweep_feed/core/widgets/custom_text_field.dart';
-import 'package:sweep_feed/core/widgets/primary_button.dart';
-import 'package:sweep_feed/core/theme/app_colors.dart';
-import 'package:sweep_feed/core/theme/app_text_styles.dart';
-import 'package:sweep_feed/features/contests/services/contest_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
-class SubmitContestScreen extends StatefulWidget {
-  const SubmitContestScreen({Key? key}) : super(key: key);
+import '../../../core/providers/providers.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/custom_text_field.dart';
+import '../../../core/widgets/primary_button.dart';
+
+class SubmitContestScreen extends ConsumerStatefulWidget {
+  const SubmitContestScreen({super.key});
 
   @override
   _SubmitContestScreenState createState() => _SubmitContestScreenState();
 }
 
-class _SubmitContestScreenState extends State<SubmitContestScreen> {
+class _SubmitContestScreenState extends ConsumerState<SubmitContestScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _prizeController = TextEditingController();
@@ -40,31 +41,36 @@ class _SubmitContestScreenState extends State<SubmitContestScreen> {
   }
 
   Future<void> _pickEndDate() async {
-    DateTime? picked = await showDatePicker(
-        context: context,
-        initialDate: _selectedEndDate ?? DateTime.now().add(const Duration(days: 7)),
-        firstDate: DateTime.now().add(const Duration(days: 1)),
-        lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
-        builder: (context, child) { // Theme the picker
-          return Theme(
-            data: ThemeData.dark().copyWith(
-              colorScheme: const ColorScheme.dark( // Added const
-                primary: AppColors.accent,
-                onPrimary: AppColors.primaryDark,
-                surface: AppColors.primaryMedium,
-                onSurface: AppColors.textWhite,
-              ),
-              dialogBackgroundColor: AppColors.primaryMedium,
-              // Optional: Style other parts like button text
-              textButtonTheme: TextButtonThemeData(
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.accent, // Button text color
-                ),
+    final picked = await showDatePicker(
+      context: context,
+      initialDate:
+          _selectedEndDate ?? DateTime.now().add(const Duration(days: 7)),
+      firstDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+      builder: (context, child) {
+        // Theme the picker
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              // Added const
+              primary: AppColors.accent,
+              onPrimary: AppColors.primaryDark,
+              surface: AppColors.primaryMedium,
+              onSurface: AppColors.textWhite,
+            ),
+            // Optional: Style other parts like button text
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.accent, // Button text color
               ),
             ),
-            child: child!,
-          );
-        });
+            dialogTheme:
+                const DialogThemeData(backgroundColor: AppColors.primaryMedium),
+          ),
+          child: child!,
+        );
+      },
+    );
     if (picked != null && picked != _selectedEndDate) {
       setState(() {
         _selectedEndDate = picked;
@@ -78,9 +84,15 @@ class _SubmitContestScreenState extends State<SubmitContestScreen> {
     }
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      if (mounted) { // Added mounted check
+      if (mounted) {
+        // Added mounted check
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('You must be logged in to submit.', style: AppTextStyles.bodyMedium)),
+          const SnackBar(
+            content: Text(
+              'You must be logged in to submit.',
+              style: AppTextStyles.bodyMedium,
+            ),
+          ),
         );
       }
       return;
@@ -92,16 +104,29 @@ class _SubmitContestScreenState extends State<SubmitContestScreen> {
     final contestData = {
       'title': _titleController.text.trim(),
       // 'prize' in Contest model is String, using prizeDescription for clarity in submission
-      'prize': _prizeController.text.trim(), 
+      'prize': _prizeController.text.trim(),
       'entryUrl': _entryUrlController.text.trim(),
-      'rulesUrl': _rulesUrlController.text.trim().isEmpty ? null : _rulesUrlController.text.trim(),
-      'sponsor': _sponsorController.text.trim().isEmpty ? null : _sponsorController.text.trim(),
-      'endDate': _selectedEndDate != null ? Timestamp.fromDate(_selectedEndDate!) : null,
-      'categories': _categoriesController.text.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(),
-      
+      'rulesUrl': _rulesUrlController.text.trim().isEmpty
+          ? null
+          : _rulesUrlController.text.trim(),
+      'sponsor': _sponsorController.text.trim().isEmpty
+          ? null
+          : _sponsorController.text.trim(),
+      'endDate': _selectedEndDate != null
+          ? Timestamp.fromDate(_selectedEndDate!)
+          : null,
+      'categories': _categoriesController.text
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+
       // Default values for fields admin might fill or that are standard for user submissions
       'imageUrl': null, // Admin to add image or fetch from URL later
-      'source': {'name': 'User Submitted', 'url': _entryUrlController.text.trim()},
+      'source': {
+        'name': 'User Submitted',
+        'url': _entryUrlController.text.trim(),
+      },
       'frequency': 'once', // Default, admin can adjust
       'eligibility': 'US', // Default, admin can adjust
       'badges': <String>[], // Default empty
@@ -114,17 +139,33 @@ class _SubmitContestScreenState extends State<SubmitContestScreen> {
     };
 
     try {
-      await context.read<ContestService>().submitContestForReview(contestData, currentUser.uid);
+      await ref
+          .read(contestServiceProvider)
+          .submitContestForReview(contestData, currentUser.uid);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Contest submitted for review!', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textWhite)), backgroundColor: AppColors.successGreen),
+          SnackBar(
+            content: Text(
+              'Contest submitted for review!',
+              style:
+                  AppTextStyles.bodyMedium.copyWith(color: AppColors.textWhite),
+            ),
+            backgroundColor: AppColors.successGreen,
+          ),
         );
         Navigator.of(context).pop();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Submission failed: ${e.toString()}', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textWhite)), backgroundColor: AppColors.errorRed),
+          SnackBar(
+            content: Text(
+              'Submission failed: ${e.toString()}',
+              style:
+                  AppTextStyles.bodyMedium.copyWith(color: AppColors.textWhite),
+            ),
+            backgroundColor: AppColors.errorRed,
+          ),
         );
       }
     } finally {
@@ -135,57 +176,116 @@ class _SubmitContestScreenState extends State<SubmitContestScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Submit a Sweepstake', style: AppTextStyles.titleLarge.copyWith(color: AppColors.textWhite)),
-        backgroundColor: AppColors.primaryMedium,
-        iconTheme: const IconThemeData(color: AppColors.textWhite),
-      ),
-      backgroundColor: AppColors.primaryDark,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              CustomTextField(label: 'Contest Title', controller: _titleController, validator: (val) => val == null || val.isEmpty ? 'Required' : null, obscureText: false,),
-              const SizedBox(height: 16),
-              CustomTextField(label: 'Prize Description', controller: _prizeController, validator: (val) => val == null || val.isEmpty ? 'Required' : null, keyboardType: TextInputType.multiline, obscureText: false,),
-              const SizedBox(height: 16),
-              CustomTextField(label: 'Entry URL', controller: _entryUrlController, validator: (val) => val == null || val.isEmpty ? 'Required' : null, keyboardType: TextInputType.url, obscureText: false,),
-              const SizedBox(height: 16),
-              CustomTextField(label: 'Rules URL (Optional)', controller: _rulesUrlController, keyboardType: TextInputType.url, obscureText: false,),
-              const SizedBox(height: 16),
-              CustomTextField(label: 'Sponsor Name (Optional)', controller: _sponsorController, obscureText: false,),
-              const SizedBox(height: 16),
-              TextFormField(
-                decoration: InputDecoration(
-                  labelText: 'End Date',
-                  hintText: _selectedEndDate == null ? 'Select Date' : DateFormat('MMMM d, yyyy').format(_selectedEndDate!),
-                  prefixIcon: Icon(Icons.calendar_today, color: AppColors.textLight),
-                  labelStyle: AppTextStyles.bodyMedium.copyWith(color: AppColors.textLight),
-                  hintStyle: AppTextStyles.bodyMedium.copyWith(color: _selectedEndDate == null ? AppColors.textMuted : AppColors.textWhite),
-                  filled: true,
-                  fillColor: AppColors.primaryMedium,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.primaryLight)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.primaryLight)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: AppColors.accent)),
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: Text(
+            'Submit a Sweepstake',
+            style:
+                AppTextStyles.titleLarge.copyWith(color: AppColors.textWhite),
+          ),
+          backgroundColor: AppColors.primaryMedium,
+          iconTheme: const IconThemeData(color: AppColors.textWhite),
+        ),
+        backgroundColor: AppColors.primaryDark,
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CustomTextField(
+                  label: 'Contest Title',
+                  controller: _titleController,
+                  validator: (val) =>
+                      val == null || val.isEmpty ? 'Required' : null,
                 ),
-                style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textWhite),
-                readOnly: true,
-                onTap: _pickEndDate,
-                validator: (value) => _selectedEndDate == null ? 'Please select an end date' : null,
-              ),
-              const SizedBox(height: 16),
-              CustomTextField(label: 'Categories (comma-separated)', controller: _categoriesController, validator: (val) => val == null || val.isEmpty ? 'Required' : null, obscureText: false,),
-              const SizedBox(height: 32),
-              PrimaryButton(text: 'Submit for Review', onPressed: _submitContest, isLoading: _isLoading),
-            ],
+                const SizedBox(height: 16),
+                CustomTextField(
+                  label: 'Prize Description',
+                  controller: _prizeController,
+                  validator: (val) =>
+                      val == null || val.isEmpty ? 'Required' : null,
+                  keyboardType: TextInputType.multiline,
+                ),
+                const SizedBox(height: 16),
+                CustomTextField(
+                  label: 'Entry URL',
+                  controller: _entryUrlController,
+                  validator: (val) =>
+                      val == null || val.isEmpty ? 'Required' : null,
+                  keyboardType: TextInputType.url,
+                ),
+                const SizedBox(height: 16),
+                CustomTextField(
+                  label: 'Rules URL (Optional)',
+                  controller: _rulesUrlController,
+                  keyboardType: TextInputType.url,
+                ),
+                const SizedBox(height: 16),
+                CustomTextField(
+                  label: 'Sponsor Name (Optional)',
+                  controller: _sponsorController,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  decoration: InputDecoration(
+                    labelText: 'End Date',
+                    hintText: _selectedEndDate == null
+                        ? 'Select Date'
+                        : DateFormat('MMMM d, yyyy').format(_selectedEndDate!),
+                    prefixIcon: const Icon(
+                      Icons.calendar_today,
+                      color: AppColors.textLight,
+                    ),
+                    labelStyle: AppTextStyles.bodyMedium
+                        .copyWith(color: AppColors.textLight),
+                    hintStyle: AppTextStyles.bodyMedium.copyWith(
+                      color: _selectedEndDate == null
+                          ? AppColors.textMuted
+                          : AppColors.textWhite,
+                    ),
+                    filled: true,
+                    fillColor: AppColors.primaryMedium,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide:
+                          const BorderSide(color: AppColors.primaryLight),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide:
+                          const BorderSide(color: AppColors.primaryLight),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: AppColors.accent),
+                    ),
+                  ),
+                  style: AppTextStyles.bodyLarge
+                      .copyWith(color: AppColors.textWhite),
+                  readOnly: true,
+                  onTap: _pickEndDate,
+                  validator: (value) => _selectedEndDate == null
+                      ? 'Please select an end date'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                CustomTextField(
+                  label: 'Categories (comma-separated)',
+                  controller: _categoriesController,
+                  validator: (val) =>
+                      val == null || val.isEmpty ? 'Required' : null,
+                ),
+                const SizedBox(height: 32),
+                PrimaryButton(
+                  text: 'Submit for Review',
+                  onPressed: _submitContest,
+                  isLoading: _isLoading,
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
 }

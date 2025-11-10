@@ -1,74 +1,353 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
-import 'package:sweep_feed/core/models/contest_model.dart'; // Assuming Contest model path
-import 'package:sweep_feed/core/models/reminder_model.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart';
+import 'package:timezone/timezone.dart' as tz;
 
+import '../../../core/models/contest_model.dart';
+import '../../../core/utils/logger.dart';
+
+/// A service to handle scheduling and managing local notifications for reminders.
 class ReminderService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FlutterLocalNotificationsPlugin _notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
 
-  CollectionReference<Reminder> _userRemindersRef(String userId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('reminders')
-        .withConverter<Reminder>(
-          fromFirestore: (snapshots, _) => Reminder.fromFirestore(snapshots),
-          toFirestore: (reminder, _) => reminder.toJson(),
+  /// Initializes the notification service and sets up platform-specific
+  /// configurations.
+  Future<void> init() async {
+    // Initialize timezone database
+    initializeTimeZones();
+
+    const initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const initializationSettingsIOS = DarwinInitializationSettings();
+
+    const initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    await _notificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (response) async {
+        // Handle notification tapped while app is in background or terminated
+      },
+    );
+
+    await _createAndroidNotificationChannel();
+  }
+
+  /// Create Android notification channels (required for Android 8.0+)
+  Future<void> _createAndroidNotificationChannel() async {
+    const sweepstakeChannel = AndroidNotificationChannel(
+      'sweepstake_reminder_channel', // id
+      'Sweepstake Reminders', // title
+      description:
+          'Notifications to remind you to enter individual sweepstakes', // description
+      importance: Importance.max,
+    );
+
+    const dailyChannel = AndroidNotificationChannel(
+      'daily_reminder_channel', // id
+      'Daily Reminders', // title
+      description:
+          'A single daily reminder for all your saved sweepstakes.', // description
+      importance: Importance.high, // Changed from defaultImportance
+    );
+
+    final androidFlutterLocalNotificationsPlugin =
+        _notificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+
+    await androidFlutterLocalNotificationsPlugin
+        ?.createNotificationChannel(sweepstakeChannel);
+    await androidFlutterLocalNotificationsPlugin
+        ?.createNotificationChannel(dailyChannel);
+  }
+
+  /// Requests notification permissions on iOS.
+  /// This should be called before scheduling any notification.
+  Future<void> requestIOSPermissions() async {
+    try {
+      final iosPlugin =
+          _notificationsPlugin.resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>();
+
+      if (iosPlugin != null) {
+        final granted = await iosPlugin.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
         );
+
+        if (granted == true) {
+          logger.i('iOS notification permissions granted');
+        } else {
+          logger.w('iOS notification permissions denied');
+        }
+      }
+    } catch (e) {
+      logger.e('Error requesting iOS permissions', error: e);
+    }
   }
 
-  Future<void> addReminder(String userId, Contest contest, DateTime reminderDateTime) async {
+  /// Schedules a one-time reminder for a specific contest at a given time.
+  Future<void> scheduleReminder(Contest contest, DateTime scheduledTime) async {
+    await requestIOSPermissions();
+
+    const androidDetails = AndroidNotificationDetails(
+      'sweepstake_reminder_channel',
+      'Sweepstake Reminders',
+      channelDescription: 'Notifications to remind you to enter sweepstakes',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    const iosDetails = DarwinNotificationDetails();
+
+    const notificationDetails = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
     try {
-      final reminder = Reminder(
-        contestId: contest.id,
-        reminderTimestamp: Timestamp.fromDate(reminderDateTime),
-        createdAt: Timestamp.now(),
-        contestTitle: contest.title,
-        contestEndDate: Timestamp.fromDate(contest.endDate),
+      // Use stable ID based on contest ID to avoid hash collisions
+      final notificationId = _generateStableId(contest.id, 'reminder');
+
+      await _notificationsPlugin.zonedSchedule(
+        notificationId,
+        'Sweepstake Reminder',
+        "It's time to enter the ${contest.title} sweepstake again!",
+        tz.TZDateTime.from(scheduledTime, tz.local),
+        notificationDetails,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: contest.id,
       );
-      await _userRemindersRef(userId).doc(contest.id).set(reminder);
-      debugPrint('Reminder added for contest ${contest.id}');
-      await scheduleLocalNotification(reminder); // Call placeholder
+
+      logger.i('Scheduled reminder for contest: ${contest.id}');
     } catch (e) {
-      debugPrint('Error adding reminder: $e');
+      logger.e('Error scheduling reminder for contest ${contest.id}', error: e);
       rethrow;
     }
   }
 
-  Future<void> removeReminder(String userId, String contestId) async {
+  /// Schedules a notification for when a contest is about to end.
+  /// Notifies user 24 hours before the contest ends.
+  Future<void> scheduleContestEndReminder(Contest contest) async {
+    await requestIOSPermissions();
+
+    final now = DateTime.now();
+    final endDate = contest.endDate;
+    final notifyTime = endDate.subtract(const Duration(hours: 24));
+
+    // Only schedule if the notification time is in the future
+    if (notifyTime.isAfter(now)) {
+      const androidDetails = AndroidNotificationDetails(
+        'sweepstake_reminder_channel',
+        'Sweepstake Reminders',
+        channelDescription: 'Notifications for contest endings',
+        importance: Importance.max,
+        priority: Priority.high,
+      );
+
+      const iosDetails = DarwinNotificationDetails();
+
+      const notificationDetails = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      try {
+        // Use stable ID for end reminders
+        final notificationId = _generateStableId(contest.id, 'end');
+
+        await _notificationsPlugin.zonedSchedule(
+          notificationId,
+          'Contest Ending Soon! 🏆',
+          "${contest.title} ends in 24 hours! Don't miss your chance to win ${contest.prize}!",
+          tz.TZDateTime.from(notifyTime, tz.local),
+          notificationDetails,
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          payload: contest.id,
+        );
+
+        logger.i('Scheduled end reminder for contest: ${contest.id}');
+      } catch (e) {
+        logger.e(
+          'Error scheduling end reminder for contest ${contest.id}',
+          error: e,
+        );
+        rethrow;
+      }
+    } else {
+      logger.d(
+        'Contest end reminder not scheduled. Notify time is in the past for contest: ${contest.id}',
+      );
+    }
+  }
+
+  /// Cancels a contest end reminder
+  Future<void> cancelContestEndReminder(String contestId) async {
     try {
-      await _userRemindersRef(userId).doc(contestId).delete();
-      debugPrint('Reminder removed for contest $contestId');
-      // TODO: Cancel local notification if one was scheduled
+      final notificationId = _generateStableId(contestId, 'end');
+      await _notificationsPlugin.cancel(notificationId);
+      logger.i('Cancelled end reminder for contest: $contestId');
     } catch (e) {
-      debugPrint('Error removing reminder: $e');
+      logger.e(
+        'Error cancelling end reminder for contest $contestId',
+        error: e,
+      );
+    }
+  }
+
+  /// Schedules a daily repeating notification based on user's settings.
+  Future<void> scheduleDailyReminder(SharedPreferences prefs) async {
+    try {
+      final enabled = prefs.getBool('dailyReminderEnabled') ?? false;
+      final timeString = prefs.getString('dailyReminderTime');
+
+      if (enabled && timeString != null) {
+        // Validate time format
+        if (!_isValidTimeFormat(timeString)) {
+          logger.e('Invalid time format in preferences: $timeString');
+          return;
+        }
+
+        final timeParts = timeString.split(':');
+        final hour = int.parse(timeParts[0]);
+        final minute = int.parse(timeParts[1]);
+
+        // Validate hour and minute ranges
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+          logger.e('Invalid time values: hour=$hour, minute=$minute');
+          return;
+        }
+
+        // Generate stable ID based on time
+        final notificationId = _generateDailyReminderId(hour, minute);
+
+        await _notificationsPlugin.zonedSchedule(
+          notificationId,
+          'Your Daily Sweepstakes are Ready!',
+          'You have new daily contests to enter. Good luck!',
+          _nextInstanceOfTime(hour, minute),
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'daily_reminder_channel',
+              'Daily Reminders',
+              channelDescription: 'A daily reminder for all your sweepstakes.',
+              importance: Importance.high, // Changed from defaultImportance
+              priority: Priority.high, // Changed from defaultPriority
+            ),
+            iOS: DarwinNotificationDetails(),
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          matchDateTimeComponents: DateTimeComponents.time, // Repeat daily
+        );
+
+        logger.i(
+          'Scheduled daily reminder for $hour:${minute.toString().padLeft(2, '0')}',
+        );
+      }
+    } catch (e) {
+      logger.e('Error scheduling daily reminder', error: e);
       rethrow;
     }
   }
 
-  Future<bool> hasReminder(String userId, String contestId) async {
+  /// Cancels the daily repeating notification.
+  Future<void> cancelDailyReminder(SharedPreferences prefs) async {
     try {
-      final doc = await _userRemindersRef(userId).doc(contestId).get();
-      return doc.exists;
+      final timeString = prefs.getString('dailyReminderTime');
+
+      if (timeString != null && _isValidTimeFormat(timeString)) {
+        final timeParts = timeString.split(':');
+        final hour = int.parse(timeParts[0]);
+        final minute = int.parse(timeParts[1]);
+
+        final notificationId = _generateDailyReminderId(hour, minute);
+        await _notificationsPlugin.cancel(notificationId);
+        logger.i(
+          'Cancelled daily reminder for $hour:${minute.toString().padLeft(2, '0')}',
+        );
+      } else {
+        // Fallback: cancel all possible daily reminder IDs
+        await _cancelAllDailyReminders();
+      }
     } catch (e) {
-      debugPrint('Error checking reminder: $e');
-      return false;
+      logger.e('Error cancelling daily reminder', error: e);
     }
   }
 
-  Future<Reminder?> getReminder(String userId, String contestId) async {
+  tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduledDate =
+        tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute);
+    if (scheduledDate.isBefore(now)) {
+      scheduledDate = scheduledDate.add(const Duration(days: 1));
+    }
+    return scheduledDate;
+  }
+
+  /// Generate stable notification ID to avoid hash collisions
+  int _generateStableId(String contestId, String type) {
+    // Use a combination of contest ID hash and type to create stable IDs
+    final contestHash = contestId.hashCode.abs();
+    final typeHash = type.hashCode.abs();
+
+    // Combine hashes in a way that minimizes collisions
+    return (contestHash * 31 + typeHash) % 2147483647; // Max int value
+  }
+
+  /// Generate daily reminder ID based on time
+  int _generateDailyReminderId(int hour, int minute) {
+    // Use hour and minute to create unique ID (max 24*60 = 1440 possible values)
+    return 1000000 +
+        (hour * 60) +
+        minute; // Offset to avoid collision with other IDs
+  }
+
+  /// Validate time format (HH:mm)
+  bool _isValidTimeFormat(String timeString) {
+    final regex = RegExp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$');
+    return regex.hasMatch(timeString);
+  }
+
+  /// Cancel all possible daily reminder notifications (fallback)
+  Future<void> _cancelAllDailyReminders() async {
     try {
-      final doc = await _userRemindersRef(userId).doc(contestId).get();
-      return doc.exists ? doc.data() : null;
+      // Cancel reminders for all possible times (0:00 to 23:59)
+      for (var hour = 0; hour < 24; hour++) {
+        for (var minute = 0; minute < 60; minute += 15) {
+          // Check every 15 minutes
+          final id = _generateDailyReminderId(hour, minute);
+          await _notificationsPlugin.cancel(id);
+        }
+      }
+      logger.i('Cancelled all possible daily reminders');
     } catch (e) {
-      debugPrint('Error getting reminder: $e');
-      return null;
+      logger.e('Error cancelling all daily reminders', error: e);
     }
   }
 
-  Future<void> scheduleLocalNotification(Reminder reminder) async {
-    // This is a placeholder for actual local notification scheduling logic
-    debugPrint('Placeholder: Schedule local notification for ${reminder.contestTitle} at ${reminder.reminderTimestamp.toDate()}');
-    // Example: await FlutterLocalNotificationsPlugin().zonedSchedule(...);
+  /// Get all pending notifications (for debugging)
+  Future<List<PendingNotificationRequest>> getPendingNotifications() async {
+    try {
+      return await _notificationsPlugin.pendingNotificationRequests();
+    } catch (e) {
+      logger.e('Error getting pending notifications', error: e);
+      return [];
+    }
+  }
+
+  /// Cancel a specific reminder by contest ID
+  Future<void> cancelReminder(String contestId) async {
+    try {
+      final notificationId = _generateStableId(contestId, 'reminder');
+      await _notificationsPlugin.cancel(notificationId);
+      logger.i('Cancelled reminder for contest: $contestId');
+    } catch (e) {
+      logger.e('Error cancelling reminder for contest $contestId', error: e);
+    }
   }
 }

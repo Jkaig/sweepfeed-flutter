@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../services/subscription_service.dart';
-import '../../../core/models/subscription_tiers.dart';
-import '../../../core/theme/app_colors.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/loading_indicator.dart';
+import '../models/subscription_tiers.dart';
+import '../services/subscription_service.dart';
 
-class SubscriptionScreen extends StatefulWidget {
+class SubscriptionScreen extends ConsumerStatefulWidget {
   const SubscriptionScreen({super.key});
 
   @override
-  State<SubscriptionScreen> createState() => _SubscriptionScreenState();
+  ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
 }
 
-class _SubscriptionScreenState extends State<SubscriptionScreen> {
+class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   SubscriptionTier _selectedTier = SubscriptionTier.basic;
   bool _isAnnual = false;
   bool _isProcessing = false;
@@ -23,7 +24,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final subscriptionService =
-          Provider.of<SubscriptionService>(context, listen: false);
+          ref.read(subscriptionServiceProvider.notifier);
       if (!subscriptionService.productsLoaded) {
         subscriptionService.loadProducts();
       }
@@ -31,67 +32,73 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Choose Your Plan'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Provider.of<SubscriptionService>(context, listen: false)
-                  .restorePurchases();
-            },
-            child: const Text('Restore', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-      body: Consumer<SubscriptionService>(
-        builder: (context, subscriptionService, _) {
-          if (subscriptionService.isLoading) {
-            return const Center(child: LoadingIndicator());
-          }
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Choose Your Plan'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                ref
+                    .read(subscriptionServiceProvider.notifier)
+                    .restorePurchases();
+              },
+              child:
+                  const Text('Restore', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+        body: Consumer(
+          builder: (context, ref, _) {
+            final subscriptionService = ref.watch(subscriptionServiceProvider);
+            if (subscriptionService.isLoading) {
+              return const Center(child: LoadingIndicator());
+            }
 
-          if (subscriptionService.isSubscribed &&
-              !subscriptionService.isInTrialPeriod) {
-            return _buildActiveSubscriptionView(subscriptionService);
-          }
+            if (subscriptionService.isSubscribed &&
+                !subscriptionService.isInTrialPeriod) {
+              return _buildActiveSubscriptionView(subscriptionService);
+            }
 
-          if (subscriptionService.error.isNotEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        size: 60, color: Colors.red),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Error loading subscription plans',
-                      style: AppTextStyles.titleLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      subscriptionService.error,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: () => subscriptionService.loadProducts(),
-                      child: const Text('Try Again'),
-                    ),
-                  ],
+            if (subscriptionService.error.isNotEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 60,
+                        color: Colors.red,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Error loading subscription plans',
+                        style: AppTextStyles.titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        subscriptionService.error,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: () => ref
+                            .read(subscriptionServiceProvider.notifier)
+                            .loadProducts(),
+                        child: const Text('Try Again'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          }
+              );
+            }
 
-          return _buildSubscriptionPlansView(subscriptionService);
-        },
-      ),
-    );
-  }
+            return _buildSubscriptionPlansView(subscriptionService);
+          },
+        ),
+      );
 
   Widget _buildActiveSubscriptionView(SubscriptionService service) {
     final plan = service.currentSubscriptionPlan;
@@ -107,7 +114,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                color: Colors.green.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.green),
               ),
@@ -120,8 +127,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'You\'re a $tier Member!',
-                    style: AppTextStyles.titleLarge.copyWith(color: Colors.green),
+                    "You're a $tier Member!",
+                    style:
+                        AppTextStyles.titleLarge.copyWith(color: Colors.green),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
@@ -178,7 +186,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'You\'re in your Basic trial period',
+                        "You're in your Basic trial period",
                         style: TextStyle(
                           color: Colors.green.shade700,
                           fontWeight: FontWeight.bold,
@@ -244,7 +252,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         ),
                       ],
                       selected: {_isAnnual},
-                      onSelectionChanged: (Set<bool> selected) {
+                      onSelectionChanged: (selected) {
                         setState(() {
                           _isAnnual = selected.first;
                         });
@@ -281,7 +289,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
             ElevatedButton(
               onPressed: _selectedTier == SubscriptionTier.free || _isProcessing
                   ? null
-                  : () => _subscribe(context, service),
+                  : () => _subscribe(
+                        context,
+                        ref.read(subscriptionServiceProvider.notifier),
+                      ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _selectedTier.color,
                 disabledBackgroundColor: Colors.grey.shade300,
@@ -320,7 +331,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                 child: OutlinedButton(
                   onPressed: _isProcessing
                       ? null
-                      : () => _startFreeTrial(context, service),
+                      : () => _startFreeTrial(
+                            context,
+                            ref.read(subscriptionServiceProvider.notifier),
+                          ),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(double.infinity, 48),
                     shape: RoundedRectangleBorder(
@@ -345,8 +359,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Widget _buildTierCard(
-      BuildContext context, SubscriptionTier tier, SubscriptionService service,
-      {required bool isSelected}) {
+    BuildContext context,
+    SubscriptionTier tier,
+    SubscriptionService service, {
+    required bool isSelected,
+  }) {
     final tierFeatures = tier.features;
     final currentTier = service.currentTier;
 
@@ -400,7 +417,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                         Row(
                           children: [
                             Text(
-                              price,
+                              '\$${price.toStringAsFixed(2)}',
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -476,25 +493,27 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
               const SizedBox(height: 12),
 
               // Features list
-              ...tierFeatures.take(4).map((feature) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      children: [
-                        Icon(
-                          feature.included ? Icons.check : Icons.close,
-                          color: feature.included ? Colors.green : Colors.red,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            feature.title,
-                            style: const TextStyle(fontSize: 14),
+              ...tierFeatures.take(4).map(
+                    (feature) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.check,
+                            color: Colors.green,
+                            size: 16,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              feature,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  )),
+                  ),
             ],
           ),
         ),
@@ -503,7 +522,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Future<void> _subscribe(
-      BuildContext context, SubscriptionService service) async {
+    BuildContext context,
+    SubscriptionService service,
+  ) async {
     if (_selectedTier == SubscriptionTier.free) {
       Navigator.of(context).pop(true);
       return;
@@ -554,7 +575,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Future<void> _startFreeTrial(
-      BuildContext context, SubscriptionService service) async {
+    BuildContext context,
+    SubscriptionService service,
+  ) async {
     setState(() {
       _isProcessing = true;
     });
@@ -587,7 +610,5 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     }
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
+  String _formatDate(DateTime date) => '${date.day}/${date.month}/${date.year}';
 }

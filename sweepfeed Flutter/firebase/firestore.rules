@@ -2,53 +2,206 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // User profiles are readable by anyone but only writable by the user
-    match /users/{userId} {
-      allow read: if true;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if request.auth != null && request.auth.uid == userId;
+    
+    // Helper functions
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
     }
     
-    // Sweepstakes are readable by anyone
-    match /sweepstakes/{sweepstakesId} {
-      allow read: if true;
-      allow write: if request.auth != null && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)/roles/admin);
+    function isAdmin() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roles.admin == true;
+    }
+    
+    function isValidUser() {
+      return request.auth != null && request.auth.uid != null;
+    }
+    
+    function rateLimit(field, maxPerHour) {
+      return !exists(resource) ||
+             request.time > resource.data[field] + duration.value(1, 'h') ||
+             resource.data.get(field + '_count', 0) < maxPerHour;
+    }
+
+    // User profiles with enhanced privacy protection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || 
+        (isValidUser() && (!exists(resource) || resource.data.get('settings.privacy.showProfile', true) == true));
+      
+      allow create: if isOwner(userId) && 
+        validateUserData() && 
+        request.resource.data.createdAt == request.time;
+      
+      allow update: if isOwner(userId) && 
+        validateUserUpdate() &&
+        request.resource.data.updatedAt == request.time;
+      
+      allow delete: if isOwner(userId) || isAdmin();
+      
+      function validateUserData() {
+        return request.resource.data.keys().hasAll(['email', 'createdAt']) &&
+               request.resource.data.email is string &&
+               request.resource.data.email.matches('.*@.*\\..*') &&
+               request.resource.data.get('totalEntries', 0) >= 0 &&
+               request.resource.data.get('points', 0) >= 0;
+      }
+      
+      function validateUserUpdate() {
+        return !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['id', 'createdAt', 'email']) &&
+               request.resource.data.get('totalEntries', 0) >= resource.data.get('totalEntries', 0);
+      }
+    }
+    
+    // Enhanced sweepstakes security
+    match /sweepstakes/{sweepstakeId} {
+      allow read: if isValidUser() && 
+        (!exists(resource) || 
+         (resource.data.get('isActive', true) == true &&
+          resource.data.get('endDate', timestamp.date(9999, 12, 31)) > request.time));
+      
+      allow create: if isAdmin() && 
+        validateSweepstakeData();
+      
+      allow update: if isAdmin() && 
+        validateSweepstakeUpdate();
+      
+      allow delete: if isAdmin();
+      
+      function validateSweepstakeData() {
+        return request.resource.data.keys().hasAll(['title', 'description', 'prize']) &&
+               request.resource.data.get('value', 0) > 0 &&
+               request.resource.data.get('value', 0) <= 1000000; // Max $1M prize value
+      }
+      
+      function validateSweepstakeUpdate() {
+        return !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['id', 'createdAt']);
+      }
+    }
+    
+    // Secure entry tracking with rate limiting
+    match /entries/{entryId} {
+      allow read: if isValidUser() && 
+        (isOwner(resource.data.userId) || isAdmin());
+      
+      allow create: if isValidUser() && 
+        validateEntry() &&
+        rateLimit('lastEntry', 100); // Max 100 entries per hour
+      
+      allow update: if false; // Entries are immutable
+      allow delete: if isAdmin();
+      
+      function validateEntry() {
+        return request.resource.data.userId == request.auth.uid &&
+               request.resource.data.timestamp == request.time &&
+               exists(/databases/$(database)/documents/sweepstakes/$(request.resource.data.sweepstakeId));
+      }
+    }
+    
+    // Privacy-compliant user analytics
+    match /analytics/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && 
+        request.resource.data.get('consentGiven', false) == true;
+    }
+    
+    // GDPR compliance tracking
+    match /privacy/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
     }
     
     // User saved sweepstakes
     match /users/{userId}/savedSweepstakes/{sweepstakesId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
     }
     
-    // User entries
+    // User entries subcollection
     match /users/{userId}/entries/{entryId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && 
+        validateUserEntry();
+      
+      function validateUserEntry() {
+        return request.resource.data.get('timestamp', null) == request.time &&
+               request.resource.data.keys().hasAll(['sweepstakeId', 'timestamp']);
+      }
+    }
+    
+    // Premium email inbox - only accessible by Premium subscribers
+    match /users/{userId}/emails/{emailId} {
+      allow read: if isOwner(userId) && hasPremiumAccess();
+      allow create: if false; // Only created by cloud functions/email processing service
+      allow update: if isOwner(userId) && hasPremiumAccess() && 
+        validateEmailUpdate();
+      allow delete: if isOwner(userId) && hasPremiumAccess();
+      
+      function hasPremiumAccess() {
+        return get(/databases/$(database)/documents/users/$(userId)).data.get('subscriptionTier', 'free') == 'premium';
+      }
+      
+      function validateEmailUpdate() {
+        // Only allow updates to isRead, isStarred, and tags
+        let allowedFields = ['isRead', 'isStarred', 'tags'];
+        let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
+        return modifiedFields.hasOnly(allowedFields) &&
+               modifiedFields.size() > 0; // Must actually change something
+      }
+    }
+    
+    // Email settings for Premium users
+    match /users/{userId}/settings/email {
+      allow read: if isOwner(userId) && hasPremiumAccess();
+      allow write: if isOwner(userId) && hasPremiumAccess() && 
+        validateEmailSettings();
+      
+      function hasPremiumAccess() {
+        return get(/databases/$(database)/documents/users/$(userId)).data.get('subscriptionTier', 'free') == 'premium';
+      }
+      
+      function validateEmailSettings() {
+        let requiredFields = ['showPromotionalEmails', 'notifyOnWinnerEmailsOnly', 'autoCategorizeEmails'];
+        return request.resource.data.keys().hasAll(requiredFields) &&
+               request.resource.data.showPromotionalEmails is bool &&
+               request.resource.data.notifyOnWinnerEmailsOnly is bool &&
+               request.resource.data.autoCategorizeEmails is bool;
+      }
+    }
+    
+    // Security logs (audit trail)
+    match /security_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only cloud functions can write
+    }
+    
+    // Session management
+    match /sessions/{sessionId} {
+      allow read: if isValidUser() && 
+        resource.data.userId == request.auth.uid;
+      allow write: if isValidUser() && 
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.get('createdAt', null) == request.time;
+      allow delete: if isValidUser() && 
+        resource.data.userId == request.auth.uid;
     }
     
     // Agent settings are only accessible by admins
     match /agentSettings/{settingId} {
-      allow read: if request.auth != null && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)/roles/admin);
-      allow write: if request.auth != null && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)/roles/admin);
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
     
     // Crawl sources are only accessible by admins
     match /crawlSources/{sourceId} {
-      allow read: if request.auth != null && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)/roles/admin);
-      allow write: if request.auth != null && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)/roles/admin);
+      allow read: if isAdmin();
+      allow write: if isAdmin();
     }
     
     // Crawl logs are only accessible by admins
     match /crawlLogs/{logId} {
-      allow read: if request.auth != null && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)/roles/admin);
+      allow read: if isAdmin();
       allow write: if false; // Only writeable by cloud functions
     }
   }

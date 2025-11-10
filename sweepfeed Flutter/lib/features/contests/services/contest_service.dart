@@ -1,439 +1,156 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../../core/services/firebase_service.dart';
-import '../../../core/models/contest_model.dart';
 
+import '../../../core/models/contest_model.dart';
+import '../../../core/services/firebase_service.dart';
+import '../../../core/utils/logger.dart';
+import 'sweepstake_service.dart';
+
+/// A service class for managing contests, including fetching, saving, entering,
+/// and submitting contests, as well as retrieving user entry statistics.
 class ContestService {
+  /// Constructs a [ContestService].
+  ///
+  /// Requires [firebaseService] for interacting with Firebase services and
+  /// [sweepstakeService] for managing sweepstakes related data.
+  ContestService(this.firebaseService, this.sweepstakeService);
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  /// The Firebase service used for interacting with Firebase.
   final FirebaseService firebaseService;
-  ContestService(this.firebaseService);
-  static const String _contestCacheKey = 'contest_cache';
 
-  Future<void> _saveContestsToCache(List<Contest> contests) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      List<String> jsonList =
-          contests.map((c) => json.encode(c.toJson())).toList();
-      await prefs.setStringList(_contestCacheKey, jsonList);
-      print('Saved ${contests.length} contests to cache.');
-    } catch (e) {
-      print("Error saving contests to cache: $e");
-    }
-  }
+  /// The Sweepstake service used for managing sweepstakes data.
+  final SweepstakeService sweepstakeService;
 
-  Future<List<Contest>> _loadContestsFromCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      List<String>? jsonList = prefs.getStringList(_contestCacheKey);
-      if (jsonList != null) {
-        List<Contest> contests = jsonList.map((jsonString) {
-          Map<String, dynamic> map = json.decode(jsonString);
-          return Contest.fromJson(map);
-        }).toList();
-        print('Loaded ${contests.length} contests from cache.');
+  /// Retrieves a stream of saved contests for a given user.
+  ///
+  /// @param userId The ID of the user.
+  /// @returns A stream of [Contest] objects that have been saved by the user.
+  Stream<List<Contest>> getSavedContests(String userId) => _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('savedContests')
+          .snapshots()
+          .asyncMap((snapshot) async {
+        final contests = <Contest>[];
+        for (final doc in snapshot.docs) {
+          final contestId = doc.id;
+          final contest = await sweepstakeService.getContestById(contestId);
+          if (contest != null) {
+            contests.add(contest);
+          }
+        }
         return contests;
-      }
-    } catch (e) {
-      print("Error loading contests from cache: $e");
-    }
-    return [];
-  }
+      });
 
-  Stream<List<Contest>> getContests(
-      {Map<String, dynamic>? filters, int limit = 20}) async* {
-    final userId = firebaseService.currentUser?.uid;
-    if (userId != null) {
-      yield* _getContestsForUser(userId: userId, filters: filters, limit: limit);
-    } else {
-      yield* _getAllContests(filters: filters, limit: limit);
-    }
-  }
-  Stream<List<Contest>> _getAllContests({
-    Map<String, dynamic>? filters,
-    int limit = 20,
-  }) async* {
-    // Attempt to load from cache only if no filters are applied.
-    // If filters are present, we need to fetch fresh data.
-    if (filters == null || filters.isEmpty) {
-      final cachedContests = await _loadContestsFromCache();
-      if (cachedContests.isNotEmpty) {
-        print("Emitting cached contests...");
-        yield cachedContests;
-        // Optionally, you might still want to fetch fresh data in the background
-        // For now, we return cached data and stop if no filters.
-        // return; 
-      }
-    }
+  /// Retrieves a stream of contests to populate a daily checklist, limited by the specified number.
+  ///
+  /// Only active contests (where the end date is in the future) are included.
+  ///
+  /// @param limit The maximum number of contests to retrieve. Defaults to 5.
+  /// @returns A stream of [Contest] objects that are currently active and ordered by their end date.
+  Stream<List<Contest>> getDailyChecklistContests({int limit = 5}) => _firestore
+      .collection('sweepstakes')
+      .where(
+        'endDate',
+        isGreaterThan: Timestamp.now(),
+      )
+      .orderBy('endDate', descending: false)
+      .limit(limit)
+      .snapshots()
+      .map(
+        (snapshot) => snapshot.docs.map((doc) {
+          return Contest.fromFirestore(doc);
+        }).toList(),
+      );
 
-    Query query = _firestore.collection('contests');
+  /// Retrieves a stream of the most popular contests, ordered by entry count.
+  ///
+  /// Only active contests (where the end date is in the future) are included.
+  ///
+  /// @param limit The maximum number of contests to retrieve. Defaults to 10.
+  /// @returns A stream of [Contest] objects that are currently active and ordered by entry count.
+  Stream<List<Contest>> getPopularContests({int limit = 10}) => _firestore
+      .collection('sweepstakes')
+      .where('endDate', isGreaterThan: Timestamp.now())
+      .orderBy('entryCount', descending: true)
+      .limit(limit)
+      .snapshots()
+      .map(
+        (snapshot) => snapshot.docs.map(Contest.fromFirestore).toList(),
+      );
 
-    if (filters != null) {
-      if (filters['categories'] != null && filters['categories'].isNotEmpty) {
-        query =
-            query.where('categories', arrayContainsAny: filters['categories']);
-      }
-      if (filters['entryMethods'] != null &&
-          filters['entryMethods'].isNotEmpty) {
-        query = query.where('entryMethod', whereIn: filters['entryMethods']);
-      }
-      if (filters['platforms'] != null && filters['platforms'].isNotEmpty) { // New
-        query = query.where('platform', whereIn: filters['platforms']);
-      }
-      if (filters['entryFrequencies'] != null && filters['entryFrequencies'].isNotEmpty) { // New
-        query = query.where('entryFrequency', whereIn: filters['entryFrequencies']);
-      }
-      if (filters['active'] == true) {
-        query = query.where('endDate',
-            isGreaterThan: Timestamp.fromDate(DateTime.now()));
-      } else if (filters['endingSoon'] == true) {
-        final now = DateTime.now();
-        final soonDate = now.add(const Duration(days: 3));
-        query = query
-            .where('endDate', isGreaterThan: Timestamp.fromDate(now))
-            .where('endDate',
-                isLessThanOrEqualTo: Timestamp.fromDate(soonDate));
-      }
-      if (filters['newContestDuration'] != null) { // New
-        final now = DateTime.now();
-        DateTime cutoffDate;
-        if (filters['newContestDuration'] == '24h') {
-          cutoffDate = now.subtract(const Duration(hours: 24));
-        } else if (filters['newContestDuration'] == '48h') {
-          cutoffDate = now.subtract(const Duration(hours: 48));
-        } else {
-          cutoffDate = now; // Should not happen with current UI
+  /// Retrieves a stream of contests that a user has entered.
+  ///
+  /// @param userId The ID of the user.
+  /// @returns A stream of [Contest] objects that the user has entered.
+  Stream<List<Contest>> getEnteredContests(String userId) =>
+      firebaseService.getEnteredSweepstakes(userId).asyncMap((snapshot) async {
+        final contests = <Contest>[];
+        for (final doc in snapshot) {
+          final contestId = doc.id;
+          final contest = await sweepstakeService.getContestById(contestId);
+          if (contest != null) {
+            contests.add(contest);
+          }
         }
-        // Assuming 'createdAt' is a Timestamp field in Firestore
-        query = query.where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(cutoffDate));
-      }
-      if (filters['minPrize'] != null) {
-        query = query.where('prizeValue',
-            isGreaterThanOrEqualTo: filters['minPrize']);
-      }
-      if (filters['maxPrize'] != null) {
-        query =
-            query.where('prizeValue', isLessThanOrEqualTo: filters['maxPrize']);
-      }
-    }
+        return contests;
+      });
 
-    // It's important to have a default sort order, especially if not all queries define one.
-    // However, Firestore requires the first orderBy field to match any inequality filter field.
-    // If 'createdAt' or 'endDate' is used in an inequality, it should be the first orderBy.
-    // This logic might need adjustment based on which filters are active.
-    // For simplicity, if 'newContestDuration' is active, we sort by 'createdAt'.
-    // Otherwise, by 'endDate'. This is a common use case.
-    if (filters != null && filters['newContestDuration'] != null) {
-        query = query.orderBy('createdAt', descending: true).limit(limit);
-    } else {
-        query = query.orderBy('endDate').limit(limit);
-    }
+  /// Saves a contest for a given user.
+  ///
+  /// This method stores the contest ID in the user's saved contests collection.
+  ///
+  /// @param userId The ID of the user.
+  /// @param contestId The ID of the contest to save.
+  /// @returns A [Future] that completes when the contest is saved.
+  Future<void> saveContest(String userId, String contestId) => _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('savedContests')
+          .doc(contestId)
+          .set({
+        'savedAt': FieldValue.serverTimestamp(),
+      });
 
-    await for (var snapshot in query.snapshots()) {
-      List<Contest> freshContests = snapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        return Contest.fromJson(data);
-      }).toList();
+  /// Removes a saved contest for a given user.
+  ///
+  /// @param userId The ID of the user.
+  /// @param contestId The ID of the contest to unsave.
+  /// @returns A [Future] that completes when the contest is unsaved.
+  Future<void> unsaveContest(String userId, String contestId) => _firestore
+      .collection('users')
+      .doc(userId)
+      .collection('savedContests')
+      .doc(contestId)
+      .delete();
 
-      print(
-          "Emitting fresh contests from Firestore (${freshContests.length})...");
-      yield freshContests;
+  /// Marks a contest as entered by the user.
+  ///
+  /// This method stores the contest ID in the user's entered contests collection.
+  ///
+  /// @param userId The ID of the user.
+  /// @param contestId The ID of the contest to mark as entered.
+  /// @returns A [Future] that completes when the contest is marked as entered.
+  Future<void> markAsEntered(String userId, String contestId) => _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('enteredContests')
+          .doc(contestId)
+          .set({
+        'enteredAt': FieldValue.serverTimestamp(),
+      });
 
-      if (filters == null || filters.isEmpty) {
-        await _saveContestsToCache(freshContests);
-      }
-    }
-  }
-
-  Stream<List<Contest>> _getContestsForUser(
-      {required String userId,
-      Map<String, dynamic>? filters,
-      int limit = 20}) async* {
-    // Reference to the original stream from Firebase
-    Stream<QuerySnapshot<Map<String, dynamic>>> sweepstakesStream =
-        firebaseService.getSweepstakesForUser(userId: userId, limit: limit).asStream();
-
-    await for (var snapshot in sweepstakesStream) {
-      List<Contest> contests = snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['id'] = doc.id;
-        return Contest.fromJson(data);
-      }).toList();
-
-      // Apply client-side filtering if filters are provided
-      if (filters != null && filters.isNotEmpty) {
-        contests = contests.where((contest) {
-          bool passes = true;
-          if (filters['categories'] != null &&
-              filters['categories'].isNotEmpty) {
-            passes = passes &&
-                (contest.categories?.any(
-                        (category) => filters['categories'].contains(category)) ??
-                    false);
-          }
-          if (filters['entryMethods'] != null &&
-              filters['entryMethods'].isNotEmpty) {
-            passes = passes &&
-                (filters['entryMethods'].contains(contest.entryMethod));
-          }
-          if (filters['platforms'] != null && filters['platforms'].isNotEmpty) {
-            passes = passes && (filters['platforms'].contains(contest.platform));
-          }
-          if (filters['entryFrequencies'] != null &&
-              filters['entryFrequencies'].isNotEmpty) {
-            passes = passes &&
-                (filters['entryFrequencies'].contains(contest.entryFrequency));
-          }
-          if (filters['endingSoon'] == true) {
-            final now = DateTime.now();
-            final soonDate = now.add(const Duration(days: 3));
-            passes = passes &&
-                (contest.endDate.isAfter(now) &&
-                    contest.endDate.isBefore(soonDate));
-          }
-          if (filters['newContestDuration'] != null) {
-            final now = DateTime.now();
-            DateTime cutoffDate;
-            if (filters['newContestDuration'] == '24h') {
-              cutoffDate = now.subtract(const Duration(hours: 24));
-            } else if (filters['newContestDuration'] == '48h') {
-              cutoffDate = now.subtract(const Duration(hours: 48));
-            } else {
-              cutoffDate = now; // Should not happen
-            }
-            passes = passes && (contest.createdAt.isAfter(cutoffDate));
-          }
-          if (filters['minPrize'] != null) {
-            passes = passes && (contest.prizeValue >= filters['minPrize']);
-          }
-          if (filters['maxPrize'] != null) {
-            passes = passes && (contest.prizeValue <= filters['maxPrize']);
-          }
-          return passes;
-        }).toList();
-      }
-
-      print(
-          "Emitting contests for user (filtered: ${filters != null && filters.isNotEmpty}, count: ${contests.length})...");
-      yield contests;
-
-      // Cache only if no filters are applied to avoid caching filtered results incorrectly
-      if (filters == null || filters.isEmpty) {
-        await _saveContestsToCache(contests);
-      }
-    }
-  }
-
-  Future<Contest?> getContestById(String contestId) async {
-    try {
-      final doc = await _firestore.collection('contests').doc(contestId).get();
-      if (doc.exists) {
-        final data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        return Contest.fromJson(data);
-      }
-      return null;
-    } catch (e) {
-      print('Error fetching contest: $e');
-      return null;
-    }
-  }
-
-  Future<List<Contest>> getPremiumContests() async {
-    try {
-      final snapshot =
-          await _firestore.collection('contests').where('isPremium', isEqualTo: true).get();
-      return snapshot.docs.map((doc) => Contest.fromFirestore(doc)).toList();
-    } catch (e) {
-      print('Error fetching premium contests: $e');
-      return [];
-    }
-  }
-
-  Future<List<Contest>> fetchContestsByIds(List<String> contestIds) async {
-    if (contestIds.isEmpty) {
-      return [];
-    }
-
-    try {
-      final List<Contest> contests = [];
-      for (var i = 0; i < contestIds.length; i += 10) {
-        final sublist = contestIds.sublist(
-            i, i + 10 > contestIds.length ? contestIds.length : i + 10);
-
-        final snapshot = await _firestore
-            .collection('contests')
-            .where(FieldPath.documentId, whereIn: sublist)
-            .get();
-
-        contests.addAll(snapshot.docs.map((doc) {
-          final data = doc.data();
-          data['id'] = doc.id;
-          return Contest.fromJson(data);
-        }).toList());
-      }
-
-      return contests;
-    } catch (e) {
-      print('Error fetching contests by IDs: $e');
-      return [];
-    }
-  }
-
-  Stream<List<Contest>> getFeaturedContests({int limit = 5}) {
-    return _firestore
-        .collection('contests')
-        .where('featured', isEqualTo: true)
-        .where('endDate', isGreaterThan: Timestamp.fromDate(DateTime.now()))
-        .orderBy('endDate')
-        .limit(limit)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        data['id'] = doc.id;
-        return Contest.fromJson(data);
-      }).toList();
-    });
-  }
-
-  Stream<List<Contest>> getSavedContests(String userId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('savedContests')
-        .snapshots()
-        .asyncMap((snapshot) async {
-      List<Contest> contests = [];
-      for (var doc in snapshot.docs) {
-        final contestId = doc.id;
-        final contest = await getContestById(contestId);
-        if (contest != null) {
-          contests.add(contest);
-        }
-      }
-      return contests;
-    });
-  }
-
-  Stream<List<Contest>> getDailyChecklistContests({int limit = 5}) {
-    // Example: Fetch contests ending soon, not entered by user, etc.
-    // For now, just get generic contests for simplicity, prioritizing those ending soon.
-    // This query might need adjustments based on your data model and desired checklist logic.
-    // Consider adding filters like 'not entered by user' if that data is available.
-    return _firestore
-        .collection('contests') 
-        .where('endDate', isGreaterThan: Timestamp.now()) // Only active contests
-        .orderBy('endDate', descending: false) 
-        .limit(limit)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs.map((doc) {
-            // Assuming Contest.fromFirestore correctly maps the document
-            // If doc.data() doesn't include 'id', it should be added like in other methods:
-            // final data = doc.data() as Map<String, dynamic>;
-            // data['id'] = doc.id;
-            // return Contest.fromJson(data);
-            return Contest.fromFirestore(doc); // If fromFirestore handles id from doc.id
-          }).toList();
-        });
-  }
-
-  // Save a contest for a user
-  Future<void> saveContest(String userId, String contestId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('savedContests')
-        .doc(contestId)
-        .set({
-      'savedAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // Remove a saved contest
-  Future<void> unsaveContest(String userId, String contestId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('savedContests')
-        .doc(contestId)
-        .delete();
-  }
-
-  // Mark a contest as entered by the user
-  Future<void> markAsEntered(String userId, String contestId) {
-    return _firestore
-        .collection('users')
-        .doc(userId)
-        .collection('enteredContests')
-        .doc(contestId)
-        .set({
-      'enteredAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  // --- Search Logic ---
-  Future<List<Contest>> searchContests(String query) async {
-    if (query.isEmpty || query.length < 3) {
-      return [];
-    }
-
-    // Prepare query for prefix matching (case-insensitive requires backend/search service)
-    // Firestore queries are case-sensitive by default.
-    // We search based on the provided query casing.
-    String endQuery = query.substring(0, query.length - 1) +
-        String.fromCharCode(query.codeUnitAt(query.length - 1) + 1);
-
-    try {
-      print('Searching Firestore for title >= "$query" and < "$endQuery"');
-      // Query Firestore - Requires index on 'title' (ascending) and 'endDate' (ascending)
-      final snapshot = await _firestore
-          .collection('contests')
-          .where('title', isGreaterThanOrEqualTo: query)
-          .where('title', isLessThan: endQuery)
-          .orderBy('title') // Order by title first for the range query
-          .orderBy(
-              'endDate') // Then potentially by endDate (might require composite index)
-          .limit(20) // Limit search results
-          .get();
-
-      print(
-          'Firestore search found ${snapshot.docs.length} potential matches.');
-
-      List<Contest> results = snapshot.docs.map((doc) {
-        final data = doc.data(); // No need to cast with helper
-        data['id'] = doc.id;
-        return Contest.fromJson(data);
-      }).toList();
-
-      // Optional: If Firestore search isn't powerful enough (e.g., need case-insensitive),
-      // you might still fetch a broader range and filter client-side,
-      // but that defeats the purpose of server-side search.
-
-      return results;
-    } catch (e) {
-      print('Error searching contests in Firestore: $e');
-      // Handle potential index-missing errors - prompt user/log details
-      if (e.toString().contains('requires an index')) {
-        print(
-            'Firestore Index Required: Please create a composite index on the contests collection including \'title\' (ascending) and \'endDate\' (ascending).');
-      }
-      return [];
-    }
-  }
-
-  // Mock user entry statistics for UI development
+  /// Retrieves mock user entry statistics for UI development.
+  ///
+  /// This method simulates a delay and returns mock data.
+  ///
+  /// @returns A [Future] that completes with a [Map] containing user entry statistics.
   Future<Map<String, dynamic>> getUserEntryStats() async {
-    // Simulate delay
     await Future.delayed(const Duration(milliseconds: 500));
 
-    // Return mock stats
     return {
       'totalEntered': 24,
       'dailyStreak': 5,
@@ -444,7 +161,14 @@ class ContestService {
     };
   }
 
-  // Record user entry in Firestore
+  /// Records a user's entry into a sweepstakes.
+  ///
+  /// This method adds the entry to the user's entries and entry history collections,
+  /// and increments the user's total entries count.
+  ///
+  /// @param sweepstakesId The ID of the sweepstakes entered.
+  /// @returns A [Future] that completes when the entry is recorded.
+  /// @throws Exception if the user is not logged in.
   Future<void> enterSweepstakes(String sweepstakesId) async {
     if (_auth.currentUser == null) {
       throw Exception('User not logged in');
@@ -463,7 +187,6 @@ class ContestService {
       'sweepstakesId': sweepstakesId,
     });
 
-    // Also add to user's entry history
     await _firestore
         .collection('users')
         .doc(userId)
@@ -473,37 +196,122 @@ class ContestService {
       'sweepstakesId': sweepstakesId,
     });
 
-    // Increment entry count in user profile
     await _firestore.collection('users').doc(userId).update({
       'totalEntries': FieldValue.increment(1),
       'lastEntryDate': now,
     });
   }
 
-  Future<void> submitContestForReview(Map<String, dynamic> contestData, String userId) async {
+  /// Retrieves a contest by its ID.
+  ///
+  /// @param contestId The ID of the contest to retrieve.
+  /// @returns A [Future] that completes with the [Contest] object if found, otherwise null.
+  Future<Contest?> getContestById(String contestId) async {
     try {
-      final submissionData = {
-        ...contestData,
+      final doc =
+          await _firestore.collection('sweepstakes').doc(contestId).get();
+      if (doc.exists) {
+        return Contest.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      logger.e('Error getting contest by ID', error: e);
+      return null;
+    }
+  }
+
+  /// Fetches a list of contests by their IDs.
+  ///
+  /// @param ids A list of contest IDs to retrieve.
+  /// @returns A [Future] that completes with a list of [Contest] objects.
+  Future<List<Contest>> fetchContestsByIds(List<String> ids) async {
+    try {
+      final contests = <Contest>[];
+      for (final id in ids) {
+        final contest = await getContestById(id);
+        if (contest != null) {
+          contests.add(contest);
+        }
+      }
+      return contests;
+    } catch (e) {
+      logger.e('Error fetching contests by IDs', error: e);
+      return [];
+    }
+  }
+
+  /// Retrieves a list of premium contests.
+  ///
+  /// @param limit The maximum number of contests to retrieve. Defaults to 10.
+  /// @returns A [Future] that completes with a list of [Contest] objects that are premium and currently active.
+  Future<List<Contest>> getPremiumContests({int limit = 10}) async {
+    try {
+      final snapshot = await _firestore
+          .collection('sweepstakes')
+          .where('isPremium', isEqualTo: true)
+          .where('endDate', isGreaterThan: Timestamp.now())
+          .limit(limit)
+          .get();
+
+      return snapshot.docs.map(Contest.fromFirestore).toList();
+    } catch (e) {
+      logger.e('Error getting premium contests', error: e);
+      return [];
+    }
+  }
+
+  /// Submits a contest for review.
+  ///
+  /// @param data The contest data to submit.
+  /// @param userId The ID of the user submitting the contest.
+  /// @returns A [Future] that completes when the contest is submitted.
+  /// @throws Any exception that occurs during the submission process.
+  Future<void> submitContestForReview(
+    Map<String, dynamic> data,
+    String userId,
+  ) async {
+    try {
+      await _firestore.collection('contestSubmissions').add({
+        ...data,
         'submittedBy': userId,
         'submittedAt': FieldValue.serverTimestamp(),
-        'status': 'pending', // pending, approved, rejected
-      };
-      // Ensure all required fields for a base contest are present, even if null,
-      // if your Contest.fromFirestore factory expects them.
-      submissionData.putIfAbsent('badges', () => []);
-      submissionData.putIfAbsent('isPremium', () => false);
-      // createdAt might be set here or by admin on approval. If set here, ensure it's a Timestamp.
-      submissionData.putIfAbsent('createdAt', () => FieldValue.serverTimestamp()); 
-      // 'imageUrl' might be null initially, to be added by admin.
-      // 'source' is already part of contestData from the form.
-      // 'frequency', 'eligibility', 'platform', 'entryMethod', 'prizeValue', 'isHot' are also part of contestData (some with defaults).
-
-
-      await _firestore.collection('pendingContests').add(submissionData);
-      debugPrint('Contest submitted for review: ${submissionData['title']}');
+        'status': 'pending',
+      });
     } catch (e) {
-      debugPrint('Error submitting contest for review: $e');
+      logger.e('Error submitting contest for review', error: e);
       rethrow;
+    }
+  }
+
+  /// Searches for contests based on a query string.
+  ///
+  /// @param query The search query string.
+  /// @param limit The maximum number of results to return. Defaults to 20.
+  /// @returns A [Future] that completes with a list of [Contest] objects matching the query.
+  Future<List<Contest>> searchContests(String query, {int limit = 20}) async {
+    try {
+      if (query.isEmpty) {
+        return [];
+      }
+
+      final snapshot = await _firestore
+          .collection('sweepstakes')
+          .where('endDate', isGreaterThan: Timestamp.now())
+          .limit(limit)
+          .get();
+
+      final results = snapshot.docs
+          .map(Contest.fromFirestore)
+          .where(
+            (contest) =>
+                contest.title.toLowerCase().contains(query.toLowerCase()),
+          )
+          .toList();
+
+      return results;
+    } catch (e) {
+      logger.e('Error searching contests', error: e);
+      return [];
     }
   }
 }

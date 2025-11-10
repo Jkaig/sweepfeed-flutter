@@ -1,285 +1,258 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../auth/services/auth_service.dart';
+import '../../../core/models/contest_model.dart';
+import '../../../core/utils/logger.dart';
 
+/// A service class responsible for handling sweepstake data operations
+/// using Firebase Firestore. It provides methods for retrieving, filtering,
+/// and submitting contests.
 class SweepstakeService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final AuthService _authService = AuthService();
 
-  // Show completion dialog with enhanced UI
-  Future<void> showCompletionDialog(BuildContext context, String sweepstakeId,
-      String title, String sponsor, String endDate) async {
-    final TextEditingController commentController = TextEditingController();
-    bool isSavedForLater = false;
-    bool isFavorite = false;
+  /// Retrieves a stream of contests from Firestore, applying optional filters and limits.
+  ///
+  /// This method fetches contests from the 'sweepstakes' collection, allowing filtering
+  /// based on categories, entry methods, platforms, entry frequencies, end date,
+  /// active status, ending soon status, new contest duration, and prize value.
+  /// It also supports ordering the results based on a specified field.
+  ///
+  /// @param filters A map of filters to apply to the query. Possible filter keys include:
+  ///   - 'categories': A list of category strings to filter contests by.
+  ///   - 'entryMethods': A list of entry method strings to filter contests by.
+  ///   - 'platforms': A list of platform strings to filter contests by.
+  ///   - 'entryFrequencies': A list of entry frequency strings to filter contests by.
+  ///   - 'endDate_isGreaterThan': A DateTime to filter contests with end dates after this date.
+  ///   - 'active': A boolean to filter for active contests (end date in the future).
+  ///   - 'endingSoon': A boolean to filter for contests ending soon (within 3 days).
+  ///   - 'newContestDuration': A string ('24h' or '48h') to filter for contests created within the specified duration.
+  ///   - 'minPrize': A number to filter contests with prize values greater than or equal to this value.
+  ///   - 'maxPrize': A number to filter contests with prize values less than or equal to this value.
+  ///   - 'orderBy': A string representing the field to order the contests by.
+  ///   - 'descending': A boolean indicating whether to order the contests in descending order (optional, defaults to false).
+  /// @param limit The maximum number of contests to retrieve (defaults to 20).
+  /// @returns A Stream of List<Contest> representing the contests that match the specified criteria.
+  Stream<List<Contest>> getContests({
+    Map<String, dynamic>? filters,
+    int limit = 20,
+  }) {
+    Query query = _firestore.collection('sweepstakes');
 
-    return showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) {
-          bool isSubmitting = false;
+    if (filters != null) {
+      if (filters['categories'] != null && filters['categories'].isNotEmpty) {
+        query =
+            query.where('categories', arrayContainsAny: filters['categories']);
+      }
+      if (filters['entryMethods'] != null &&
+          filters['entryMethods'].isNotEmpty) {
+        query = query.where('entryMethod', whereIn: filters['entryMethods']);
+      }
+      if (filters['platforms'] != null && filters['platforms'].isNotEmpty) {
+        // New
+        query = query.where('platform', whereIn: filters['platforms']);
+      }
+      if (filters['entryFrequencies'] != null &&
+          filters['entryFrequencies'].isNotEmpty) {
+        // New
+        query =
+            query.where('entryFrequency', whereIn: filters['entryFrequencies']);
+      }
+      if (filters['endDate_isGreaterThan'] != null) {
+        query = query.where(
+          'endDate',
+          isGreaterThan: Timestamp.fromDate(filters['endDate_isGreaterThan']),
+        );
+      }
+      if (filters['active'] == true) {
+        query = query.where(
+          'endDate',
+          isGreaterThan: Timestamp.fromDate(DateTime.now()),
+        );
+      } else if (filters['endingSoon'] == true) {
+        final now = DateTime.now();
+        final soonDate = now.add(const Duration(days: 3));
+        query = query
+            .where('endDate', isGreaterThan: Timestamp.fromDate(now))
+            .where(
+              'endDate',
+              isLessThanOrEqualTo: Timestamp.fromDate(soonDate),
+            );
+      }
+      if (filters['newContestDuration'] != null) {
+        // New
+        final now = DateTime.now();
+        DateTime cutoffDate;
+        if (filters['newContestDuration'] == '24h') {
+          cutoffDate = now.subtract(const Duration(hours: 24));
+        } else if (filters['newContestDuration'] == '48h') {
+          cutoffDate = now.subtract(const Duration(hours: 48));
+        } else {
+          cutoffDate = now; // Should not happen with current UI
+        }
+        // Assuming 'createdAt' is a Timestamp field in Firestore
+        query = query.where(
+          'createdAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(cutoffDate),
+        );
+      }
+      if (filters['minPrize'] != null) {
+        query = query.where(
+          'prizeValue',
+          isGreaterThanOrEqualTo: filters['minPrize'],
+        );
+      }
+      if (filters['maxPrize'] != null) {
+        query =
+            query.where('prizeValue', isLessThanOrEqualTo: filters['maxPrize']);
+      }
+    }
 
-          return AlertDialog(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Sweepstakes Return',
-                    style: Theme.of(context).textTheme.headlineMedium),
-                const SizedBox(height: 8),
-                Text(title, style: Theme.of(context).textTheme.titleLarge),
-                Text('Sponsored by $sponsor',
-                    style: Theme.of(context).textTheme.bodyMedium),
-                Text('Ends $endDate',
-                    style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('How did it go?'),
-                  const SizedBox(height: 16),
-                  // Completion checkbox
-                  const CheckboxListTile(
-                    value: true,
-                    onChanged: null,
-                    title: Text('I completed this sweepstake'),
-                    controlAffinity: ListTileControlAffinity.leading,
-                  ),
-                  // Save for later
-                  CheckboxListTile(
-                    value: isSavedForLater,
-                    onChanged: (value) {
-                      setState(() => isSavedForLater = value ?? false);
-                      _toggleSaveForLater(sweepstakeId, value ?? false);
-                    },
-                    title: const Text('Save for later'),
-                    controlAffinity: ListTileControlAffinity.leading,
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: commentController,
-                    decoration: const InputDecoration(
-                      labelText:
-                          'Add a comment (for referrals or additional info)',
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 3,
-                  ),
-                  const SizedBox(height: 16),
-                  // Favorite button
-                  ListTile(
-                    leading: Icon(
-                        isFavorite ? Icons.favorite : Icons.favorite_border),
-                    title: const Text('Favorite'),
-                    onTap: () {
-                      setState(() => isFavorite = !isFavorite);
-                      _toggleFavorite(sweepstakeId, isFavorite);
-                    },
-                  ),
-                  // Reminder options
-                  ListTile(
-                    leading: const Icon(Icons.calendar_today),
-                    title: const Text('Add to Daily'),
-                    onTap: () => _setReminder(sweepstakeId, 'daily'),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.calendar_view_week),
-                    title: const Text('Add to Weekly'),
-                    onTap: () => _setReminder(sweepstakeId, 'weekly'),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.calendar_month),
-                    title: const Text('Add to Monthly'),
-                    onTap: () => _setReminder(sweepstakeId, 'monthly'),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.calendar_today),
-                    title: const Text('Add to Yearly'),
-                    onTap: () => _setReminder(sweepstakeId, 'yearly'),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: isSubmitting
-                    ? null
-                    : () async {
-                        setState(() => isSubmitting = true);
-                        try {
-                          await _completeSweepstake(
-                            sweepstakeId,
-                            comment: commentController.text.trim(),
-                          );
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text(
-                                      'Sweepstake completed successfully!')),
-                            );
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Error: $e'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
-                        } finally {
-                          setState(() => isSubmitting = false);
-                        }
-                      },
-                child: isSubmitting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('Complete'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+    if (filters != null && filters['orderBy'] != null) {
+      query = query.orderBy(
+        filters['orderBy'],
+        descending: filters['descending'] ?? false,
+      );
+    } else {
+      query = query.orderBy('endDate');
+    }
+    query = query.limit(limit);
+
+    return query.snapshots().map(
+          (snapshot) => snapshot.docs.map((doc) {
+            final data = doc.data()! as Map<String, dynamic>;
+            return Contest.fromJson(data, doc.id);
+          }).toList(),
+        );
   }
 
-  // Toggle save for later status
-  Future<void> _toggleSaveForLater(String sweepstakeId, bool save) async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) throw Exception('User not authenticated');
-
-    await _firestore.collection('users').doc(userId).update({
-      'sweepstakes.savedForLater': save
-          ? FieldValue.arrayUnion([sweepstakeId])
-          : FieldValue.arrayRemove([sweepstakeId]),
-    });
+  /// Retrieves a contest from Firestore by its ID.
+  ///
+  /// @param contestId The ID of the contest to retrieve.
+  /// @returns A Future<Contest?> that completes with the Contest object if found,
+  ///          or null if the contest does not exist.  Returns null also on error.
+  Future<Contest?> getContestById(String contestId) async {
+    try {
+      final doc =
+          await _firestore.collection('sweepstakes').doc(contestId).get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        return Contest.fromJson(data, doc.id);
+      }
+      return null;
+    } catch (e) {
+      logger.e('Error fetching contest', error: e);
+      return null;
+    }
   }
 
-  // Toggle favorite status
-  Future<void> _toggleFavorite(String sweepstakeId, bool favorite) async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) throw Exception('User not authenticated');
-
-    await _firestore.collection('users').doc(userId).update({
-      'sweepstakes.favorites': favorite
-          ? FieldValue.arrayUnion([sweepstakeId])
-          : FieldValue.arrayRemove([sweepstakeId]),
-    });
+  /// Retrieves a list of premium contests from Firestore.
+  ///
+  /// @returns A Future<List<Contest>> that completes with a list of premium Contest objects.
+  ///          Returns an empty list in case of an error.
+  Future<List<Contest>> getPremiumContests() async {
+    try {
+      final snapshot = await _firestore
+          .collection('sweepstakes')
+          .where('isPremium', isEqualTo: true)
+          .get();
+      return snapshot.docs.map(Contest.fromFirestore).toList();
+    } catch (e) {
+      logger.e('Error fetching premium contests', error: e);
+      return [];
+    }
   }
 
-  // Set reminder frequency
-  Future<void> _setReminder(String sweepstakeId, String frequency) async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) throw Exception('User not authenticated');
+  /// Fetches a list of contests from Firestore by their IDs.
+  ///
+  /// This method retrieves contests in batches of 10 due to Firestore's `whereIn` limitation.
+  ///
+  /// @param contestIds A list of contest IDs to retrieve.
+  /// @returns A Future<List<Contest>> that completes with a list of Contest objects.
+  ///          Returns an empty list if no contest ids provided or in case of error.
+  Future<List<Contest>> fetchContestsByIds(List<String> contestIds) async {
+    if (contestIds.isEmpty) {
+      return [];
+    }
 
-    final reminderData = {
-      'userId': userId,
-      'sweepstakeId': sweepstakeId,
-      'frequency': frequency,
-      'createdAt': FieldValue.serverTimestamp(),
-    };
+    try {
+      final contests = <Contest>[];
+      for (var i = 0; i < contestIds.length; i += 10) {
+        final sublist = contestIds.sublist(
+          i,
+          i + 10 > contestIds.length ? contestIds.length : i + 10,
+        );
 
-    await _firestore.collection('reminders').add(reminderData);
+        final snapshot = await _firestore
+            .collection('sweepstakes')
+            .where(FieldPath.documentId, whereIn: sublist)
+            .get();
+
+        contests.addAll(
+          snapshot.docs.map((doc) {
+            final data = doc.data();
+            return Contest.fromJson(data, doc.id);
+          }).toList(),
+        );
+      }
+
+      return contests;
+    } catch (e) {
+      logger.e('Error fetching contests by IDs', error: e);
+      return [];
+    }
   }
 
-  // Complete a sweepstake
-  Future<void> _completeSweepstake(String sweepstakeId,
-      {String? comment}) async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) throw Exception('User not authenticated');
+  /// Retrieves a stream of featured contests from Firestore.
+  ///
+  /// This method fetches contests marked as "featured" and having an end date in the future.
+  /// It orders the results by end date and limits the number of contests returned.
+  ///
+  /// @param limit The maximum number of featured contests to retrieve (defaults to 5).
+  /// @returns A Stream of List<Contest> representing the featured contests.
+  Stream<List<Contest>> getFeaturedContests({int limit = 5}) => _firestore
+      .collection('sweepstakes')
+      .where('featured', isEqualTo: true)
+      .where('endDate', isGreaterThan: Timestamp.fromDate(DateTime.now()))
+      .orderBy('endDate')
+      .limit(limit)
+      .snapshots()
+      .map(
+        (snapshot) => snapshot.docs.map((doc) {
+          final data = doc.data();
+          return Contest.fromJson(data, doc.id);
+        }).toList(),
+      );
 
-    final completionData = {
-      'userId': userId,
-      'sweepstakeId': sweepstakeId,
-      'completedAt': FieldValue.serverTimestamp(),
-      'comment': comment,
-    };
+  /// Submits a contest for review to Firestore.
+  ///
+  /// This method adds contest data to the 'pendingContests' collection,
+  /// along with metadata such as the submitter's user ID, submission timestamp,
+  /// and initial status ('pending').
+  ///
+  /// @param contestData A map containing the contest data to submit.
+  /// @param userId The ID of the user submitting the contest.
+  /// @throws An exception if the submission fails.
+  Future<void> submitContestForReview(
+    Map<String, dynamic> contestData,
+    String userId,
+  ) async {
+    try {
+      final submissionData = {
+        ...contestData,
+        'submittedBy': userId,
+        'submittedAt': FieldValue.serverTimestamp(),
+        'status': 'pending', // pending, approved, rejected
+      };
+      submissionData.putIfAbsent('badges', () => []);
+      submissionData.putIfAbsent('isPremium', () => false);
+      submissionData.putIfAbsent(
+        'createdAt',
+        FieldValue.serverTimestamp,
+      );
 
-    await _firestore.collection('users').doc(userId).update({
-      'sweepstakes.completed': FieldValue.arrayUnion([sweepstakeId]),
-    });
-
-    await _firestore.collection('sweepstake_completions').add(completionData);
-
-    await _firestore.collection('sweepstakes').doc(sweepstakeId).update({
-      'completions': FieldValue.increment(1),
-      'lastCompletedAt': FieldValue.serverTimestamp(),
-    });
-
-    await _authService.addPoints(10, 'Sweepstake Completion');
-    await _authService.updateStreak();
-  }
-
-  // Get user's completed sweepstakes
-  Future<List<String>> getCompletedSweepstakes() async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) return [];
-
-    final userDoc = await _firestore.collection('users').doc(userId).get();
-    return List<String>.from(userDoc.data()?['sweepstakes']['completed'] ?? []);
-  }
-
-  // Get saved for later sweepstakes
-  Future<List<String>> getSavedForLater() async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) return [];
-
-    final userDoc = await _firestore.collection('users').doc(userId).get();
-    return List<String>.from(
-        userDoc.data()?['sweepstakes']['savedForLater'] ?? []);
-  }
-
-  // Get favorite sweepstakes
-  Future<List<String>> getFavorites() async {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) return [];
-
-    final userDoc = await _firestore.collection('users').doc(userId).get();
-    return List<String>.from(userDoc.data()?['sweepstakes']['favorites'] ?? []);
-  }
-
-  // Get user's reminders
-  Stream<QuerySnapshot> getReminders() {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) throw Exception('User not authenticated');
-
-    return _firestore
-        .collection('reminders')
-        .where('userId', isEqualTo: userId)
-        .snapshots();
-  }
-
-  // Get completion comments for a sweepstake
-  Stream<QuerySnapshot> getCompletionComments(String sweepstakeId) {
-    return _firestore
-        .collection('sweepstake_completions')
-        .where('sweepstakeId', isEqualTo: sweepstakeId)
-        .where('comment', isNotEqualTo: null)
-        .orderBy('completedAt', descending: true)
-        .snapshots();
-  }
-
-  // Get user's completion history
-  Stream<QuerySnapshot> getUserCompletionHistory() {
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) throw Exception('User not authenticated');
-
-    return _firestore
-        .collection('sweepstake_completions')
-        .where('userId', isEqualTo: userId)
-        .orderBy('completedAt', descending: true)
-        .snapshots();
+      await _firestore.collection('pendingContests').add(submissionData);
+      logger.i('Contest submitted for review: ${submissionData['title']}');
+    } catch (e) {
+      logger.e('Error submitting contest for review', error: e);
+      rethrow;
+    }
   }
 }

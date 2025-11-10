@@ -96,6 +96,16 @@ extension SubscriptionTierExtension on SubscriptionTier {
     }
   }
 
+  bool get hasEmailInbox {
+    switch (this) {
+      case SubscriptionTier.free:
+      case SubscriptionTier.basic:
+        return false;
+      case SubscriptionTier.premium:
+        return true;
+    }
+  }
+
   List<FeatureItem> get features {
     switch (this) {
       case SubscriptionTier.free:
@@ -130,6 +140,10 @@ extension SubscriptionTierExtension on SubscriptionTier {
           ),
           const FeatureItem(
             title: 'Premium-only sweepstakes',
+            included: false,
+          ),
+          const FeatureItem(
+            title: 'Dedicated email inbox (@sweepfeed.com)',
             included: false,
           ),
         ];
@@ -167,6 +181,10 @@ extension SubscriptionTierExtension on SubscriptionTier {
             title: 'Premium-only sweepstakes',
             included: false,
           ),
+          const FeatureItem(
+            title: 'Dedicated email inbox (@sweepfeed.com)',
+            included: false,
+          ),
         ];
       case SubscriptionTier.premium:
         return [
@@ -202,6 +220,10 @@ extension SubscriptionTierExtension on SubscriptionTier {
             title: 'Premium-only sweepstakes',
             included: true,
           ),
+          const FeatureItem(
+            title: 'Dedicated email inbox (@sweepfeed.com)',
+            included: true,
+          ),
         ];
     }
   }
@@ -209,13 +231,12 @@ extension SubscriptionTierExtension on SubscriptionTier {
 
 /// Represents a feature item for display in subscription tiers
 class FeatureItem {
-  final String title;
-  final bool included;
-  final String? details;
-
   const FeatureItem({
     required this.title,
     required this.included,
     this.details,
   });
+  final String title;
+  final bool included;
+  final String? details;
 }

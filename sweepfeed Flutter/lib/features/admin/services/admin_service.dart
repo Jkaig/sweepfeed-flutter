@@ -68,7 +68,7 @@ class AdminService {
 
     final snapshot = await query.limit(50).get();
     return snapshot.docs
-        .map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>})
+        .map((doc) => {'id': doc.id, ...doc.data()! as Map<String, dynamic>})
         .toList();
   }
 
@@ -112,12 +112,14 @@ class AdminService {
 
     final snapshot = await query.limit(50).get();
     return snapshot.docs
-        .map((doc) => {'id': doc.id, ...doc.data() as Map<String, dynamic>})
+        .map((doc) => {'id': doc.id, ...doc.data()! as Map<String, dynamic>})
         .toList();
   }
 
   Future<void> updateSweepstake(
-      String sweepstakeId, Map<String, dynamic> data) async {
+    String sweepstakeId,
+    Map<String, dynamic> data,
+  ) async {
     await _firestore.collection('sweepstakes').doc(sweepstakeId).update(data);
   }
 

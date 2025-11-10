@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../../contests/models/sweepstakes_model.dart';
+import '../../../core/models/sweepstake.dart';
 
 class SearchService extends ChangeNotifier {
   List<Sweepstakes> _allSweepstakes = [];
@@ -67,7 +67,7 @@ class SearchService extends ChangeNotifier {
 
       // Apply category filters
       if (_selectedCategories.isNotEmpty) {
-        bool hasMatchingCategory = false;
+        var hasMatchingCategory = false;
         for (final category in sweepstakes.categories) {
           if (_selectedCategories.contains(category)) {
             hasMatchingCategory = true;
@@ -79,7 +79,7 @@ class SearchService extends ChangeNotifier {
 
       // Apply entry method filters - use frequency instead
       if (_selectedEntryMethods.isNotEmpty) {
-        final String entryFrequency = sweepstakes.frequencyText;
+        final entryFrequency = sweepstakes.frequencyText;
         if (!_selectedEntryMethods.contains(entryFrequency)) {
           return false;
         }
@@ -89,6 +89,6 @@ class SearchService extends ChangeNotifier {
     }).toList();
 
     // Sort by end date (closest first)
-    _filteredSweepstakes.sort((a, b) => a.endDate.compareTo(b.endDate));
+    _filteredSweepstakes.sort((a, b) => a.endDate!.compareTo(b.endDate!));
   }
 }

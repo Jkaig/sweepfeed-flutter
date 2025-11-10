@@ -1,29 +1,41 @@
 import 'package:flutter/material.dart';
-import 'package:sweep_feed/core/theme/app_colors.dart';
+import '../../../core/theme/app_colors.dart';
 
 class FavoriteButton extends StatelessWidget {
+  const FavoriteButton({
+    required this.isFavorite,
+    super.key,
+    this.onToggle,
+    this.color =
+        AppColors.textWhite, // Defaulting to textWhite as per new palette
+  });
   final bool isFavorite;
   final VoidCallback? onToggle;
   final Color color;
 
-  const FavoriteButton({
-    super.key,
-    required this.isFavorite,
-    this.onToggle,
-    this.color = AppColors.textWhite, // Defaulting to textWhite as per new palette
-  });
-
   @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: Icon(
-        isFavorite ? Icons.bookmark : Icons.bookmark_border,
-        color: color,
-      ),
-      onPressed: onToggle,
-      splashRadius: 24, // Standard splash radius
-      padding: EdgeInsets.zero, // Remove default padding if a specific size is desired
-      constraints: const BoxConstraints(), // Remove default constraints for tighter packing if needed
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        decoration: isFavorite
+            ? BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.accent.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                ],
+              )
+            : null,
+        child: IconButton(
+          icon: Icon(
+            isFavorite ? Icons.bookmark : Icons.bookmark_border,
+            color: isFavorite ? AppColors.accent : color,
+          ),
+          onPressed: onToggle,
+          splashRadius: 24,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+        ),
+      );
 }

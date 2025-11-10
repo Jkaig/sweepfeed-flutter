@@ -1,35 +1,73 @@
-import 'package:url_launcher/url_launcher.dart';
-import '../models/sweepstakes_model.dart';
-import '../../tracking/services/tracking_service.dart';
-import '../../../core/models/sweepstake.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../../../core/models/contest_model.dart';
+import '../../../core/services/dust_bunnies_service.dart';
+import '../../reminders/services/reminder_service.dart';
 
 class EntryService {
-  final TrackingService _trackingService;
+  EntryService({
+    required this.gamificationService,
+    FirebaseFirestore? firestore,
+    this.reminderService,
+  }) : firestore = firestore ?? FirebaseFirestore.instance;
+  final FirebaseFirestore firestore;
+  final DustBunniesService gamificationService;
+  final ReminderService? reminderService;
 
-  EntryService(this._trackingService);
+  Future<void> enterSweepstake(
+    String userId,
+    String contestId, {
+    Contest? contest,
+  }) async {
+    final userRef = firestore.collection('users').doc(userId);
+    final entryRef = firestore.collection('user_entries').doc();
 
-  Future<void> enterSweepstakes(Sweepstakes sweepstakes) async {
-    // Track the entry
-    await _trackingService.trackEntry(sweepstakes);
+    // Use a transaction to ensure atomicity
+    await firestore.runTransaction((transaction) async {
+      // 1. Record the new entry
+      transaction.set(entryRef, {
+        'userId': userId,
+        'contestId': contestId,
+        'entryDate': FieldValue.serverTimestamp(),
+      });
 
-    // Launch the entry URL
-    final Uri url = Uri.parse(sweepstakes.entryUrl);
-    if (await canLaunchUrl(url)) {
-      await launchUrl(
-        url,
-        mode: LaunchMode.externalApplication,
-      );
-    } else {
-      throw Exception('Could not launch ${sweepstakes.entryUrl}');
+      // 2. Update the user's stats
+      transaction.update(userRef, {
+        'contestsEntered': FieldValue.increment(1),
+        'monthlyEntries': FieldValue.increment(1),
+      });
+    });
+
+    // 3. Award Sweep Dust for the entry (can happen outside the transaction)
+    await gamificationService.awardSweepDust(userId, 5, 'Sweepstake Entry');
+
+    // 4. Schedule contest end reminder notification
+    if (reminderService != null && contest != null) {
+      try {
+        await reminderService!.scheduleContestEndReminder(contest);
+      } catch (e) {
+        // Silently fail if notification scheduling fails - don't block entry
+        print('Failed to schedule contest end reminder: $e');
+      }
     }
   }
 
-  bool canEnterDaily(Sweepstakes sweepstakes) {
-    if (!sweepstakes.isDailyEntry) return true;
+  Future<bool> hasEntered(String userId, String contestId) async {
+    final querySnapshot = await firestore
+        .collection('user_entries')
+        .where('userId', isEqualTo: userId)
+        .where('contestId', isEqualTo: contestId)
+        .limit(1)
+        .get();
 
-    final lastEntry = _trackingService.trackedEntries[sweepstakes.id];
-    if (lastEntry == null) return true;
-
-    return DateTime.now().difference(lastEntry).inHours >= 24;
+    return querySnapshot.docs.isNotEmpty;
   }
+
+  Stream<bool> hasEnteredStream(String userId, String contestId) => firestore
+      .collection('user_entries')
+      .where('userId', isEqualTo: userId)
+      .where('contestId', isEqualTo: contestId)
+      .limit(1)
+      .snapshots()
+      .map((snapshot) => snapshot.docs.isNotEmpty);
 }

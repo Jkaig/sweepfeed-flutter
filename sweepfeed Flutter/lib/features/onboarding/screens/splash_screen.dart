@@ -1,144 +1,346 @@
 import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:sweep_feed/main.dart'; // For AuthWrapper
-import 'package:sweep_feed/features/onboarding/screens/onboarding_screen_1.dart';
-import 'package:sweep_feed/common/widgets/app_colors.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lottie/lottie.dart';
 
-class SplashScreen extends StatefulWidget {
+import '../../../core/providers/providers.dart';
+import '../../../core/services/biometric_auth_service.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/logger.dart';
+import '../../../core/utils/page_transitions.dart';
+import '../../../core/widgets/particle_painter.dart';
+import '../../auth/screens/auth_wrapper.dart';
+import 'adaptive_onboarding_wrapper.dart';
+
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
+class _SplashScreenState extends ConsumerState<SplashScreen>
+    with TickerProviderStateMixin {
   late AnimationController _animationController;
+  late AnimationController _pulseController;
+  late AnimationController _particleController;
   late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _slideAnimation;
+  late Animation<double> _pulseAnimation;
+  late Animation<double> _glowAnimation;
 
   @override
   void initState() {
     super.initState();
 
+    // Main animation controller
     _animationController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(milliseconds: 2500),
     );
 
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
+    // Pulse controller for continuous glow effect
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+
+    // Particle animation controller
+    _particleController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat();
+
+    // Staggered animations
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
+      ),
     );
 
+    _scaleAnimation = Tween<double>(
+      begin: 0.5,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.0, 0.6, curve: Curves.elasticOut),
+      ),
+    );
+
+    _slideAnimation = Tween<double>(
+      begin: 50.0,
+      end: 0.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.3, 0.8, curve: Curves.easeOutCubic),
+      ),
+    );
+
+    _pulseAnimation = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _pulseController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _glowAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.5, 1.0, curve: Curves.easeIn),
+      ),
+    );
+
+    // Start animations
     _animationController.forward();
 
-    Timer(const Duration(seconds: 3), _navigate);
+    // Navigate after animation
+    Future.delayed(const Duration(milliseconds: 3000), _navigate);
+
+    // Add haptic feedback
+    HapticFeedback.lightImpact();
   }
 
   Future<void> _navigate() async {
     if (!mounted) return;
 
-    final user = Provider.of<User?>(context, listen: false);
+    final prefs = ref.read(sharedPreferencesProvider);
+    final hasSeenWelcomeScreen = prefs.getBool('hasSeenWelcomeScreen') ?? false;
+
+    if (!hasSeenWelcomeScreen) {
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          PageTransitions.fadeTransition(
+            page: const AdaptiveOnboardingWrapper(),
+            duration: const Duration(milliseconds: 800),
+          ),
+        );
+      }
+      return;
+    }
+
+    final biometricService = BiometricAuthService();
+    final isBiometricsEnabled = await biometricService.isBiometricsEnabled();
+
+    if (isBiometricsEnabled) {
+      logger.i('Biometrics enabled, attempting biometric sign-in');
+      final biometricUser = await biometricService.signInWithBiometrics();
+
+      if (biometricUser != null) {
+        logger.i('Successfully signed in with biometrics');
+      } else {
+        logger.w('Biometric sign-in failed, will try regular auth');
+      }
+    }
+
+    final user = ref.read(authStateChangesProvider).value ??
+        FirebaseAuth.instance.currentUser;
+
+    Widget nextScreen;
 
     if (user == null) {
-      // Not logged in
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const AuthWrapper()),
-      );
+      nextScreen = const AuthWrapper();
     } else {
       // Logged in, check onboarding status
       try {
-        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-        bool onboardingCompleted = false;
-        if (userDoc.exists && userDoc.data() != null && userDoc.data()!.containsKey('onboardingCompleted')) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        var onboardingCompleted = false;
+        if (userDoc.exists &&
+            userDoc.data() != null &&
+            userDoc.data()!.containsKey('onboardingCompleted')) {
           onboardingCompleted = userDoc.data()!['onboardingCompleted'] as bool;
         } else {
           // If field doesn't exist, assume onboarding is not completed.
-          // Optionally, update Firestore to set it to false if it's missing.
-          // This case should ideally be handled at user creation in AuthWrapper or AuthService.
-          // For safety here, treat as not completed.
-          // await FirebaseFirestore.instance.collection('users').doc(user.uid).set({'onboardingCompleted': false}, SetOptions(merge: true));
         }
 
         if (onboardingCompleted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const AuthWrapper()), // AuthWrapper will lead to MainScreen
-          );
+          nextScreen = const AuthWrapper();
         } else {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const OnboardingScreen1()),
-          );
+          nextScreen = const AdaptiveOnboardingWrapper();
         }
       } catch (e) {
         // Error fetching user data, fallback to login/auth wrapper
-        debugPrint("Error fetching onboarding status: $e");
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const AuthWrapper()),
-        );
+        nextScreen = const AuthWrapper();
       }
+    }
+
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        PageTransitions.fadeTransition(
+          page: nextScreen,
+          duration: const Duration(milliseconds: 800),
+        ),
+      );
     }
   }
 
   @override
   void dispose() {
     _animationController.dispose();
+    _pulseController.dispose();
+    _particleController.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              AppColors.backgroundDark,
-              Color(0xFF0A2A4F), // Slightly lighter shade
+  Widget build(BuildContext context) => Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: AppColors.darkGradient,
+          ),
+          child: Stack(
+            children: [
+              // Animated particles/embers background
+              AnimatedBuilder(
+                animation: _particleController,
+                builder: (context, child) => CustomPaint(
+                  painter: ParticlePainter(
+                    progress: _particleController.value,
+                    color: AppColors.brandCyan.withValues(alpha: 0.3),
+                  ),
+                  size: Size.infinite,
+                ),
+              ),
+              // Main content
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    // Logo with scale and glow animation
+                    AnimatedBuilder(
+                      animation: _animationController,
+                      builder: (context, child) => Transform.scale(
+                        scale: _scaleAnimation.value,
+                        child: FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: Container(
+                            width: 180,
+                            height: 180,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.brandCyan.withValues(
+                                    alpha: 0.5 * _glowAnimation.value,
+                                  ),
+                                  blurRadius: 50,
+                                  spreadRadius: 20,
+                                ),
+                              ],
+                            ),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                // Try to load Lottie animation, fallback to image
+                                FutureBuilder(
+                                  future: DefaultAssetBundle.of(context)
+                                      .load(
+                                        'assets/animations/logo_animation.json',
+                                      )
+                                      .catchError((_) => throw Exception()),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.hasData) {
+                                      return Lottie.asset(
+                                        'assets/animations/logo_animation.json',
+                                        width: 150,
+                                        height: 150,
+                                      );
+                                    } else {
+                                      // Fallback to static image with pulse
+                                      return AnimatedBuilder(
+                                        animation: _pulseAnimation,
+                                        builder: (context, child) =>
+                                            Transform.scale(
+                                          scale: _pulseAnimation.value,
+                                          child: Image.asset(
+                                            'assets/icon/appicon.png',
+                                            width: 150,
+                                            height: 150,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    // Title with slide animation
+                    AnimatedBuilder(
+                      animation: _animationController,
+                      builder: (context, child) => Transform.translate(
+                        offset: Offset(0, _slideAnimation.value),
+                        child: FadeTransition(
+                          opacity: _fadeAnimation,
+                          child: ShaderMask(
+                            shaderCallback: (bounds) =>
+                                AppColors.glowGradient.createShader(bounds),
+                            child: Text(
+                              'SWEEPFEED',
+                              style: AppTextStyles.displayLarge.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 3,
+                                fontSize: 42,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Tagline with delayed animation
+                    AnimatedBuilder(
+                      animation: _animationController,
+                      builder: (context, child) => Transform.translate(
+                        offset: Offset(0, _slideAnimation.value * 0.5),
+                        child: FadeTransition(
+                          opacity: _glowAnimation,
+                          child: AnimatedBuilder(
+                            animation: _pulseController,
+                            builder: (context, child) => Text(
+                              'YOUR DAILY SHOT AT GLORY',
+                              style: AppTextStyles.titleMedium.copyWith(
+                                color: AppColors.brandCyan.withValues(
+                                  alpha: 0.8 + (0.2 * _pulseAnimation.value),
+                                ),
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
           ),
         ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: Image.asset(
-                  'assets/icon/appicon.png', // Ensure this path is correct
-                  width: 150, // Adjust size as needed
-                  height: 150,
-                ),
-              ),
-              const SizedBox(height: 24),
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: const Text(
-                  "SweepFeed",
-                  style: TextStyle(
-                    fontSize: 36,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              FadeTransition(
-                opacity: _fadeAnimation,
-                child: const Text(
-                  "Your Sweepstakes Feed",
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70, // Slightly less prominent
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+      );
 }

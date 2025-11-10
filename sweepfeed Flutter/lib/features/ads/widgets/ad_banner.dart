@@ -1,28 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../services/ad_service.dart';
-import '../../subscription/services/subscription_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 
 /// Ad banner widget that displays an ad only for free users
 /// This is a placeholder that would be replaced with an actual ad network widget
-class AdBanner extends StatefulWidget {
-  final bool showRemoveButton;
-  final double height;
-  final String? adType;
-
+class AdBanner extends ConsumerStatefulWidget {
   const AdBanner({
     super.key,
     this.showRemoveButton = true,
     this.height = 60.0,
     this.adType = 'banner',
   });
+  final bool showRemoveButton;
+  final double height;
+  final String? adType;
 
   @override
-  State<AdBanner> createState() => _AdBannerState();
+  ConsumerState<AdBanner> createState() => _AdBannerState();
 }
 
-class _AdBannerState extends State<AdBanner> {
+class _AdBannerState extends ConsumerState<AdBanner> {
   bool _isLoading = true;
   bool _adShown = false;
 
@@ -52,7 +50,7 @@ class _AdBannerState extends State<AdBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final subscriptionService = Provider.of<SubscriptionService>(context);
+    final subscriptionService = ref.watch(subscriptionServiceProvider);
 
     // Don't show ads for premium users
     if (subscriptionService.isSubscribed) {
@@ -114,7 +112,7 @@ class _AdBannerState extends State<AdBanner> {
                       child: TextButton(
                         onPressed: _navigateToSubscription,
                         style: TextButton.styleFrom(
-                          backgroundColor: Colors.white.withOpacity(0.7),
+                          backgroundColor: Colors.white.withValues(alpha: 0.7),
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           minimumSize: const Size(0, 32),
                           shape: RoundedRectangleBorder(
@@ -153,15 +151,13 @@ class ListBottomAdBanner extends StatelessWidget {
   const ListBottomAdBanner({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.only(bottom: 8.0),
-      child: AdBanner(
-        height: 80,
-        adType: 'native',
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.only(bottom: 8.0),
+        child: AdBanner(
+          height: 80,
+          adType: 'native',
+        ),
+      );
 }
 
 /// A widget that shows an ad between list items
@@ -174,21 +170,19 @@ class InlineAdBanner extends StatefulWidget {
 
 class _InlineAdBannerState extends State<InlineAdBanner> {
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 90,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade800.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade800),
-      ),
-      child: const Center(
-        child: Text(
-          'Advertisement',
-          style: TextStyle(color: Colors.white54),
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        height: 90,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade800.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade800),
         ),
-      ),
-    );
-  }
+        child: const Center(
+          child: Text(
+            'Advertisement',
+            style: TextStyle(color: Colors.white54),
+          ),
+        ),
+      );
 }

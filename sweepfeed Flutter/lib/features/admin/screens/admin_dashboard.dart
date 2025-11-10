@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+
 import '../services/admin_service.dart';
 import '../widgets/stats_card.dart';
-import '../widgets/user_management_card.dart';
 import '../widgets/sweepstake_management_card.dart';
+import '../widgets/user_management_card.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -145,24 +146,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.notifications, color: Colors.white),
-                  title: const Text('Push Notifications',
-                      style: TextStyle(color: Colors.white)),
+                  title: const Text(
+                    'Push Notifications',
+                    style: TextStyle(color: Colors.white),
+                  ),
                   onTap: () {
                     // Handle push notifications settings
                   },
                 ),
                 ListTile(
                   leading: const Icon(Icons.verified_user, color: Colors.white),
-                  title: const Text('User Verification',
-                      style: TextStyle(color: Colors.white)),
+                  title: const Text(
+                    'User Verification',
+                    style: TextStyle(color: Colors.white),
+                  ),
                   onTap: () {
                     // Handle user verification settings
                   },
                 ),
                 ListTile(
                   leading: const Icon(Icons.policy, color: Colors.white),
-                  title: const Text('Content Moderation',
-                      style: TextStyle(color: Colors.white)),
+                  title: const Text(
+                    'Content Moderation',
+                    style: TextStyle(color: Colors.white),
+                  ),
                   onTap: () {
                     // Handle content moderation settings
                   },

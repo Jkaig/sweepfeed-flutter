@@ -1,24 +1,23 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:sweep_feed/core/models/contest_model.dart';
-import 'package:sweep_feed/core/theme/app_colors.dart';
-import 'package:sweep_feed/core/theme/app_text_styles.dart';
+import '../../../core/models/contest_model.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
 
 class InteractiveDailyChecklistItem extends StatelessWidget {
-  final Contest contest;
-  final bool isCompleted;
-  final Function(String contestId) onToggleComplete;
-  final Function(String contestId) onHide;
-  final Function(Contest contest) onViewDetails;
-
   const InteractiveDailyChecklistItem({
-    Key? key,
     required this.contest,
     required this.isCompleted,
     required this.onToggleComplete,
     required this.onHide,
     required this.onViewDetails,
-  }) : super(key: key);
+    super.key,
+  });
+  final Contest contest;
+  final bool isCompleted;
+  final Function(String contestId) onToggleComplete;
+  final Function(String contestId) onHide;
+  final Function(Contest contest) onViewDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +26,9 @@ class InteractiveDailyChecklistItem extends StatelessWidget {
       decoration: isCompleted ? TextDecoration.lineThrough : null,
     );
     final subtitleStyle = AppTextStyles.bodySmall.copyWith(
-      color: isCompleted ? AppColors.textMuted.withOpacity(0.7) : AppColors.textLight,
+      color: isCompleted
+          ? AppColors.textMuted.withValues(alpha: 0.7)
+          : AppColors.textLight,
       decoration: isCompleted ? TextDecoration.lineThrough : null,
     );
 
@@ -44,7 +45,7 @@ class InteractiveDailyChecklistItem extends StatelessWidget {
             children: [
               Checkbox(
                 value: isCompleted,
-                onChanged: (bool? value) => onToggleComplete(contest.id),
+                onChanged: (value) => onToggleComplete(contest.id),
                 activeColor: AppColors.accent,
                 checkColor: AppColors.primaryDark,
                 side: const BorderSide(color: AppColors.accent), // Added const
@@ -57,8 +58,20 @@ class InteractiveDailyChecklistItem extends StatelessWidget {
                   width: 50,
                   height: 50,
                   fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(color: AppColors.primaryLight, width: 50, height: 50),
-                  errorWidget: (context, url, error) => Container(color: AppColors.primaryLight, width: 50, height: 50, child: const Icon(Icons.image_not_supported, color: AppColors.textMuted)), // Added const
+                  placeholder: (context, url) => Container(
+                    color: AppColors.primaryLight,
+                    width: 50,
+                    height: 50,
+                  ),
+                  errorWidget: (context, url, error) => Container(
+                    color: AppColors.primaryLight,
+                    width: 50,
+                    height: 50,
+                    child: const Icon(
+                      Icons.image_not_supported,
+                      color: AppColors.textMuted,
+                    ),
+                  ), // Added const
                 ),
               ),
               const SizedBox(width: 12),
@@ -66,14 +79,28 @@ class InteractiveDailyChecklistItem extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(contest.title, style: textStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      contest.title,
+                      style: textStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     const SizedBox(height: 4),
-                    Text(contest.prize, style: subtitleStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      contest.prize,
+                      style: subtitleStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.visibility_off_outlined, color: AppColors.textMuted.withOpacity(0.7), size: 20),
+                icon: Icon(
+                  Icons.visibility_off_outlined,
+                  color: AppColors.textMuted.withValues(alpha: 0.7),
+                  size: 20,
+                ),
                 tooltip: 'Hide for today',
                 onPressed: () => onHide(contest.id),
               ),

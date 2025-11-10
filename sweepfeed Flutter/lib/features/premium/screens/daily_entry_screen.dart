@@ -1,22 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:sweepfeed_app/features/subscription/services/subscription_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../../core/models/contest_model.dart';
-import '../../contests/services/contest_service.dart';
-import '../../contests/screens/contest_detail_screen.dart';
-import '../../../core/analytics/analytics_service.dart';
-import '../../subscription/screens/subscription_screen.dart';
-import '../../../core/widgets/paywall_widget.dart';
 
-class DailyEntryScreen extends StatefulWidget {
+import '../../../core/models/contest_model.dart';
+import '../../../core/providers/providers.dart';
+import '../../../core/utils/logger.dart';
+import '../../../core/widgets/paywall_widget.dart';
+import '../../contests/screens/contest_detail_screen.dart';
+import '../../subscription/screens/subscription_screen.dart';
+
+class DailyEntryScreen extends ConsumerStatefulWidget {
   const DailyEntryScreen({super.key});
 
   @override
   DailyEntryScreenState createState() => DailyEntryScreenState();
 }
 
-class DailyEntryScreenState extends State<DailyEntryScreen>
+class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
     with TickerProviderStateMixin {
   TabController? _tabController;
   List<Contest> _dailyContests = [];
@@ -28,17 +28,17 @@ class DailyEntryScreenState extends State<DailyEntryScreen>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadTrackedContests();
-    context.read<AnalyticsService>().logScreenView('DailyEntryScreen');
+    ref.read(analyticsServiceProvider).logScreenView('DailyEntryScreen');
   }
 
   Future<void> _loadTrackedContests() async {
     setState(() {
       _isLoading = true;
     });
-    final contestService = context.read<ContestService>();
+    final contestService = ref.read(contestServiceProvider);
     try {
       final allContests = await contestService.getPremiumContests();
-      if(mounted){
+      if (mounted) {
         setState(() {
           _dailyContests = allContests
               .where((c) => c.frequency.toLowerCase() == 'daily')
@@ -49,7 +49,7 @@ class DailyEntryScreenState extends State<DailyEntryScreen>
         });
       }
     } catch (e) {
-      print("Error loading tracked contests: $e");
+      logger.e('Error loading tracked contests', error: e);
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -64,48 +64,54 @@ class DailyEntryScreenState extends State<DailyEntryScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Entry Checklist'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: [
-            Tab(text: 'Daily (${_dailyContests.length})'),
-            Tab(text: 'Monthly (${_monthlyContests.length})'),
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: const Text('Entry Checklist'),
+          bottom: TabBar(
+            controller: _tabController,
+            tabs: [
+              Tab(text: 'Daily (${_dailyContests.length})'),
+              Tab(text: 'Monthly (${_monthlyContests.length})'),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh List',
+              onPressed: _isLoading ? null : _loadTrackedContests,
+            ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh List',
-            onPressed: _isLoading ? null : _loadTrackedContests,
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Consumer<SubscriptionService>(builder: (context, service, _) {
-              if (service.hasPremiumAccess) {
-                return TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildContestList(_dailyContests),
-                    _buildContestList(_monthlyContests),
-                  ],
-                );
-              } else {
-                return PaywallWidget(
-                  message: 'Subscribe to Premium to access the daily entry checklist.',
-                  onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => const SubscriptionScreen()));
-                  },
-                );
-              }
-            }),
-    );
-  }
+        body: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Consumer(
+                builder: (context, ref, _) {
+                  final subscriptionService =
+                      ref.watch(subscriptionServiceProvider);
+                  if (subscriptionService.hasPremiumAccess) {
+                    return TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildContestList(_dailyContests),
+                        _buildContestList(_monthlyContests),
+                      ],
+                    );
+                  } else {
+                    return PaywallWidget(
+                      message:
+                          'Subscribe to Premium to access the daily entry checklist.',
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const SubscriptionScreen(),
+                          ),
+                        );
+                      },
+                    );
+                  }
+                },
+              ),
+      );
 
   Widget _buildContestList(List<Contest> contests) {
     if (contests.isEmpty) {
@@ -126,22 +132,16 @@ class DailyEntryScreenState extends State<DailyEntryScreen>
       itemCount: contests.length,
       itemBuilder: (context, index) {
         final contest = contests[index];
-        bool isCompleted = false; // Placeholder
+        const isCompleted = false; // Placeholder
         return ListTile(
           title: Text(
             contest.title,
-            style: TextStyle(
-              decoration: isCompleted
-                  ? TextDecoration.lineThrough
-                  : TextDecoration.none,
-              color: isCompleted ? Colors.grey : null,
+            style: const TextStyle(
+              decoration: TextDecoration.none,
             ),
           ),
           subtitle: Text(
             '${contest.prizeFormatted} - Ends ${DateFormat.yMd().format(contest.endDate)}',
-            style: TextStyle(
-              color: isCompleted ? Colors.grey : null,
-            ),
           ),
           trailing: IconButton(
             icon: const Icon(Icons.info_outline),

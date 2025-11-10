@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../subscription/services/subscription_service.dart';
@@ -7,15 +6,13 @@ import '../../subscription/services/subscription_service.dart';
 /// Note: This is a placeholder service that would be replaced with actual
 /// ad network integration (Google AdMob, Facebook Audience Network, etc.)
 class AdService with ChangeNotifier {
-  static final AdService _instance = AdService._internal();
-  factory AdService() => _instance;
-  AdService._internal();
+  AdService(this._subscriptionService);
+  final SubscriptionService _subscriptionService;
 
   // Configuration
   static const String _lastAdShownTimeKey = 'last_ad_shown_time';
   static const int _minTimeBetweenAdsSeconds = 60; // 1 minute
 
-  final SubscriptionService _subscriptionService = SubscriptionService();
   DateTime? _lastAdShownTime;
   bool _isAdLoading = false;
 
@@ -38,10 +35,6 @@ class AdService with ChangeNotifier {
     }
 
     // In a real implementation, this would initialize the ad network SDK
-    if (kDebugMode) {
-      print(
-          'AdService initialized. Last ad shown: ${_lastAdShownTime?.toString() ?? 'never'}');
-    }
   }
 
   /// Check if enough time has passed to show another ad
@@ -80,7 +73,9 @@ class AdService with ChangeNotifier {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        _lastAdShownTimeKey, _lastAdShownTime!.toIso8601String());
+      _lastAdShownTimeKey,
+      _lastAdShownTime!.toIso8601String(),
+    );
 
     notifyListeners();
   }

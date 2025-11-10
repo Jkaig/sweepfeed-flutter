@@ -1,176 +1,344 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:share_plus/share_plus.dart';
+import 'dart:io' show Platform;
+
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Import firebase_auth
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import 'package:sweep_feed/core/models/contest_model.dart';
-import 'package:sweep_feed/features/contests/services/contest_service.dart';
-import 'package:sweep_feed/features/saved/services/saved_sweepstakes_service.dart';
-import 'package:sweep_feed/core/analytics/analytics_service.dart';
-import 'package:sweep_feed/features/comments/widgets/comment_section.dart';
-import 'package:sweep_feed/core/theme/app_colors.dart';
-import 'package:sweep_feed/core/theme/app_text_styles.dart';
-import 'package:sweep_feed/core/widgets/loading_indicator.dart';
-import 'package:sweep_feed/core/widgets/primary_button.dart';
-import 'package:sweep_feed/features/reminders/services/reminder_service.dart'; // Import ReminderService
+import '../../../core/models/contest_model.dart';
+import '../../../core/providers/providers.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/loading_indicator.dart';
+import '../../../core/widgets/primary_button.dart';
+import '../../../core/widgets/webview_screen.dart';
+import '../widgets/comment_section.dart';
+import '../widgets/contest_share_dialog.dart';
 
-class ContestDetailScreen extends StatefulWidget {
+/// Displays the details for a single contest.
+class ContestDetailScreen extends ConsumerStatefulWidget {
+  /// Creates a [ContestDetailScreen].
+  const ContestDetailScreen({
+    required this.contestId,
+    super.key,
+  });
+
+  /// The ID of the contest to display.
   final String contestId;
 
-  const ContestDetailScreen({super.key, required this.contestId});
-
   @override
-  _ContestDetailScreenState createState() => _ContestDetailScreenState();
+  ConsumerState<ContestDetailScreen> createState() =>
+      _ContestDetailScreenState();
 }
 
-class _ContestDetailScreenState extends State<ContestDetailScreen> {
+class _ContestDetailScreenState extends ConsumerState<ContestDetailScreen>
+    with SingleTickerProviderStateMixin {
   Future<Contest?>? _contestFuture;
-  final ReminderService _reminderService = ReminderService();
-  bool _hasReminder = false;
-  bool _isReminderLoading = true;
-  User? _currentUser;
-  Contest? _currentContest; 
+  late AnimationController _bookmarkAnimationController;
+  late Animation<double> _bookmarkScaleAnimation;
 
   @override
   void initState() {
     super.initState();
-    _currentUser = FirebaseAuth.instance.currentUser;
     _loadContestDetails();
-    context.read<AnalyticsService>().logScreenView('ContestDetailScreen');
+    _bookmarkAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _bookmarkScaleAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(
+        parent: _bookmarkAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _bookmarkAnimationController.dispose();
+    super.dispose();
   }
 
   void _loadContestDetails() {
-    _contestFuture = context.read<ContestService>().getContestById(widget.contestId);
-    _contestFuture!.then((contest) {
-      if (contest != null && _currentUser != null) {
-        _currentContest = contest; // Store the contest
-        _checkReminderStatus();
-      } else {
-         if (mounted) setState(() => _isReminderLoading = false);
-      }
-    });
+    _contestFuture =
+        ref.read(sweepstakeServiceProvider).getContestById(widget.contestId);
   }
 
-  Future<void> _checkReminderStatus() async {
-    if (_currentUser == null || _currentContest == null) return;
-    if (!mounted) return; 
-    setState(() => _isReminderLoading = true);
-    bool reminderExists = await _reminderService.hasReminder(_currentUser!.uid, _currentContest!.id);
-    if (mounted) { 
-      setState(() {
-        _hasReminder = reminderExists;
-        _isReminderLoading = false;
-      });
+  Future<void> _openWebView(Contest contest) async {
+    final entered = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => WebViewScreen(
+          url: contest.entryUrl,
+          title: contest.title,
+        ),
+      ),
+    );
+
+    if (entered == true && mounted) {
+      _showPostEntryDialog(contest);
     }
   }
 
-  Future<void> _toggleReminder() async {
-    if (_currentUser == null || _currentContest == null) return;
-    final userId = _currentUser!.uid;
-    final contest = _currentContest!;
+  void _showPostEntryDialog(Contest contest) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.primaryMedium,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.celebration, color: AppColors.accent, size: 28),
+            SizedBox(width: 12),
+            Text('Success!', style: TextStyle(color: AppColors.textWhite)),
+          ],
+        ),
+        content: const Text(
+          'What would you like to do next?',
+          style: TextStyle(color: AppColors.textLight),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              final userId = ref.read(firebaseServiceProvider).currentUser?.uid;
+              if (userId != null) {
+                ref
+                    .read(entryServiceProvider)
+                    .enterSweepstake(userId, contest.id, contest: contest);
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text('Entered! Good luck!'),
+                      ],
+                    ),
+                    backgroundColor: AppColors.successGreen,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else {
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text(
+              'Mark as Entered',
+              style: TextStyle(color: AppColors.accent),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              showContestShareDialog(context, contest);
+            },
+            icon: const Icon(
+              Icons.share,
+              color: AppColors.electricBlue,
+              size: 20,
+            ),
+            label: const Text(
+              'Share Contest',
+              style: TextStyle(color: AppColors.electricBlue),
+            ),
+          ),
+          ..._generateReminderActions(contest),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text(
+              'Close',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    if (_hasReminder) {
-      await _reminderService.removeReminder(userId, contest.id);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reminder cancelled.', style: AppTextStyles.bodyMedium)));
-    } else {
-      DateTime contestEndDate = contest.endDate;
-      DateTime initialReminderDate = contestEndDate.subtract(const Duration(days: 1));
-      
-      final DateTime? pickedDate = await showDatePicker(
-        context: context,
-        initialDate: initialReminderDate.isAfter(DateTime.now()) ? initialReminderDate : DateTime.now().add(const Duration(days:1)),
-        firstDate: DateTime.now(),
-        lastDate: contestEndDate,
-        helpText: 'Select Reminder Date',
-         // TODO: Theme the DatePicker if needed via MaterialApp theme or builder
+  List<Widget> _generateReminderActions(Contest contest) {
+    final actions = <Widget>[];
+    final reminderService = ref.read(reminderServiceProvider);
+
+    void schedule(Duration duration, String message) {
+      final reminderTime = DateTime.now().add(duration);
+      reminderService.scheduleReminder(contest, reminderTime);
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
       );
-
-      if (pickedDate != null && mounted) {
-        final TimeOfDay? pickedTime = await showTimePicker(
-          context: context,
-          initialTime: TimeOfDay.fromDateTime(initialReminderDate),
-          helpText: 'Select Reminder Time',
-          // TODO: Theme the TimePicker if needed
-        );
-
-        if (pickedTime != null) {
-          final DateTime finalReminderDateTime = DateTime(
-            pickedDate.year, pickedDate.month, pickedDate.day,
-            pickedTime.hour, pickedTime.minute,
-          );
-          await _reminderService.addReminder(userId, contest, finalReminderDateTime);
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Reminder set for ${DateFormat.yMd().add_jm().format(finalReminderDateTime)}', style: AppTextStyles.bodyMedium)));
-        }
-      }
     }
-    _checkReminderStatus(); // Refresh reminder state
-  }
 
+    switch (contest.entryFrequency) {
+      case 'Daily':
+        actions.add(
+          TextButton(
+            onPressed: () => schedule(
+              const Duration(days: 1),
+              'Reminder set for tomorrow!',
+            ),
+            child: const Text('Remind Me Tomorrow'),
+          ),
+        );
+        break;
+      case 'Weekly':
+        actions.add(
+          TextButton(
+            onPressed: () => schedule(
+              const Duration(days: 7),
+              'Reminder set for next week!',
+            ),
+            child: const Text('Remind Me Next Week'),
+          ),
+        );
+        break;
+      case 'Monthly':
+        actions.add(
+          TextButton(
+            onPressed: () => schedule(
+              const Duration(days: 30),
+              'Reminder set for next month!',
+            ),
+            child: const Text('Remind Me Next Month'),
+          ),
+        );
+        break;
+    }
+    return actions;
+  }
 
   Future<void> _launchURL(String? urlString) async {
-    if (urlString == null || urlString.isEmpty) return;
-    final Uri url = Uri.parse(urlString);
+    if (urlString == null || urlString.isEmpty) {
+      return;
+    }
+    final url = Uri.parse(urlString);
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      debugPrint('Could not launch $urlString');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open the link: $urlString', style: AppTextStyles.bodySmall)),
+          SnackBar(content: Text('Could not open the link: $urlString')),
         );
       }
     }
   }
 
   void _shareContest(String title, String contestId) {
-    // Assuming a base URL, replace with your actual domain/path
     final contestUrl = 'https://yourapp.com/contest/$contestId';
     Share.share(
       'Check out this contest: $title! $contestUrl',
       subject: 'Awesome Contest: $title',
     );
-    context.read<AnalyticsService>().logShare('contest', contestId, 'button');
+    ref.read(analyticsServiceProvider).logShare(contestId: contestId);
+  }
+
+  void _copyContestLink(String contestId) {
+    final contestUrl = 'https://yourapp.com/contest/$contestId';
+    Clipboard.setData(ClipboardData(text: contestUrl));
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text('Link copied to clipboard!'),
+            ],
+          ),
+          backgroundColor: AppColors.successGreen,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
+    ref.read(analyticsServiceProvider).logEvent(
+        eventName: 'contest_link_copied',
+        parameters: {'contest_id': contestId});
   }
 
   @override
   Widget build(BuildContext context) {
-    final savedService = context.watch<SavedSweepstakesService>();
+    ref
+        .read(analyticsServiceProvider)
+        .logScreenView(screenName: 'ContestDetailScreen');
+    final savedService = ref.watch(savedSweepstakesServiceProvider);
     final isInitiallySaved = savedService.isSaved(widget.contestId);
 
     return Scaffold(
-      backgroundColor: AppColors.primaryDark, 
+      backgroundColor: AppColors.primaryDark,
       appBar: AppBar(
-        title: Text('Contest Details', style: AppTextStyles.titleLarge.copyWith(color: AppColors.textWhite)),
-        backgroundColor: AppColors.primaryMedium, 
-        iconTheme: const IconThemeData(color: AppColors.textWhite), 
+        title: Text(
+          'Contest Details',
+          style: AppTextStyles.titleLarge.copyWith(color: AppColors.textWhite),
+        ),
+        backgroundColor: AppColors.primaryMedium,
+        iconTheme: const IconThemeData(color: AppColors.textWhite),
         actions: [
           IconButton(
-            icon: _isReminderLoading
-                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.textWhite))
-                : Icon(_hasReminder ? Icons.alarm_on : Icons.alarm_add, color: _hasReminder ? AppColors.accent : AppColors.textWhite),
-            tooltip: _hasReminder ? 'Cancel Reminder' : 'Set Reminder',
-            onPressed: _isReminderLoading ? null : _toggleReminder,
-          ),
-          IconButton(
-            icon: Icon(isInitiallySaved ? Icons.bookmark : Icons.bookmark_border, color: AppColors.accent),
+            icon: ScaleTransition(
+              scale: _bookmarkScaleAnimation,
+              child: Icon(
+                isInitiallySaved ? Icons.bookmark : Icons.bookmark_border,
+                color: AppColors.accent,
+              ),
+            ),
             tooltip: isInitiallySaved ? 'Unsave' : 'Save',
             onPressed: () {
-              context.read<AnalyticsService>().logContestSaved(widget.contestId, !isInitiallySaved);
-              context.read<SavedSweepstakesService>().toggleSaved(widget.contestId);
+              _bookmarkAnimationController
+                  .forward()
+                  .then((_) => _bookmarkAnimationController.reverse());
+              ref.read(analyticsServiceProvider).logContestSaved(
+                  contestId: widget.contestId, isSaved: !isInitiallySaved);
+              ref
+                  .read(savedSweepstakesServiceProvider)
+                  .toggleSaved(widget.contestId);
             },
           ),
-          FutureBuilder<Contest?>( 
+          FutureBuilder<Contest?>(
             future: _contestFuture,
             builder: (context, snapshot) {
               if (snapshot.hasData && snapshot.data != null) {
-                return IconButton(
-                  icon: const Icon(Icons.share, color: AppColors.textWhite),
-                  onPressed: () => _shareContest(snapshot.data!.title, widget.contestId),
+                final contest = snapshot.data!;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (Platform.isIOS &&
+                        contest.endDate.difference(DateTime.now()).inHours < 24)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.timer_outlined,
+                          color: AppColors.textWhite,
+                        ),
+                        tooltip: 'Start Countdown',
+                        onPressed: () {
+                          ref
+                              .read(liveActivityServiceProvider)
+                              .startLiveActivity(contest.id);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Live countdown started!'),
+                            ),
+                          );
+                        },
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.copy, color: AppColors.textWhite),
+                      tooltip: 'Copy Link',
+                      onPressed: () => _copyContestLink(widget.contestId),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.share, color: AppColors.textWhite),
+                      tooltip: 'Share',
+                      onPressed: () =>
+                          showContestShareDialog(context, snapshot.data!),
+                    ),
+                  ],
                 );
               }
-              return const SizedBox.shrink(); 
-            }
+              return const SizedBox.shrink();
+            },
           ),
         ],
       ),
@@ -183,11 +351,15 @@ class _ContestDetailScreenState extends State<ContestDetailScreen> {
           if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(16),
                 child: Text(
-                  snapshot.hasError ? 'Error: ${snapshot.error}' : 'Contest not found.',
+                  snapshot.hasError
+                      ? 'Error: ${snapshot.error}'
+                      : 'Contest not found.',
                   textAlign: TextAlign.center,
-                  style: AppTextStyles.bodyLarge.copyWith(color: AppColors.errorRed),
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: AppColors.errorRed,
+                  ),
                 ),
               ),
             );
@@ -195,112 +367,162 @@ class _ContestDetailScreenState extends State<ContestDetailScreen> {
 
           final contest = snapshot.data!;
           final dateFormat = DateFormat('MMMM d, yyyy');
-          final entryUrl = contest.source['url'] as String?;
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   contest.title,
-                  style: AppTextStyles.headlineMedium.copyWith(color: AppColors.textWhite),
+                  style: AppTextStyles.headlineMedium.copyWith(
+                    color: AppColors.textWhite,
+                  ),
                 ),
                 const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12.0), // Rounded corners for image
-                  child: CachedNetworkImage( // Using CachedNetworkImage
-                    imageUrl: contest.imageUrl,
-                    height: 220, // Slightly larger image
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
+                Hero(
+                  tag: 'contest-image-${contest.id}',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CachedNetworkImage(
+                      imageUrl: contest.imageUrl,
                       height: 220,
-                      color: AppColors.primaryLight,
-                      child: const Center(child: LoadingIndicator(size: 30)),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      height: 220,
-                      color: AppColors.primaryLight,
-                      child: Icon(Icons.broken_image_outlined, color: AppColors.textMuted, size: 48),
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        height: 220,
+                        color: AppColors.primaryLight,
+                        child: const Center(child: LoadingIndicator(size: 30)),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        height: 220,
+                        color: AppColors.primaryLight,
+                        child: const Icon(
+                          Icons.broken_image_outlined,
+                          color: AppColors.textMuted,
+                          size: 48,
+                        ),
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // Key Details with new styling
                 _buildDetailRow(context, [
-                  _buildDetailItem(Icons.event_busy_outlined, 'Ends', dateFormat.format(contest.endDate)),
-                  _buildDetailItem(Icons.emoji_events_outlined, 'Prize', contest.prizeFormatted),
+                  if (contest.startDate != null)
+                    _buildDetailItem(
+                      Icons.event_available_outlined,
+                      'Starts',
+                      dateFormat.format(contest.startDate!),
+                    ),
+                  _buildDetailItem(
+                    Icons.event_busy_outlined,
+                    'Ends',
+                    dateFormat.format(contest.endDate),
+                  ),
                 ]),
                 const SizedBox(height: 12),
                 _buildDetailRow(context, [
-                  _buildDetailItem(Icons.repeat_on_outlined, 'Frequency', contest.entryFrequency),
-                  _buildDetailItem(Icons.flag_outlined, 'Eligibility', contest.eligibility),
+                  _buildDetailItem(
+                    Icons.emoji_events_outlined,
+                    'Prize',
+                    contest.prizeFormatted,
+                  ),
+                  _buildDetailItem(
+                    Icons.repeat_on_outlined,
+                    'Frequency',
+                    contest.entryFrequency,
+                  ),
                 ]),
-                if(contest.sponsor != null && contest.sponsor!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildDetailRow(context, [
+                  _buildDetailItem(
+                    Icons.flag_outlined,
+                    'Eligibility',
+                    contest.eligibility,
+                  ),
+                  if (contest.sponsor.isNotEmpty)
+                    _buildDetailItem(
+                      Icons.business_center_outlined,
+                      'Sponsor',
+                      contest.sponsor,
+                    ),
+                ]),
+                if (contest.rulesUrl != null &&
+                    contest.rulesUrl!.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                   _buildDetailRow(context, [
-                    _buildDetailItem(Icons.business_center_outlined, 'Sponsor', contest.sponsor!),
-                  ]),
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () => _launchURL(contest.rulesUrl),
+                      icon: const Icon(Icons.gavel_outlined, size: 16),
+                      label: const Text('View Official Rules'),
+                    ),
+                  ),
                 ],
-
                 const SizedBox(height: 20),
-                Divider(color: AppColors.primaryLight.withOpacity(0.5)),
+                Divider(color: AppColors.primaryLight.withAlpha(128)),
                 const SizedBox(height: 12),
-                
-                // Tags/Categories - styled
-                if (contest.categories.isNotEmpty || contest.badges.isNotEmpty) ...[
-                  Text('Tags & Info', style: AppTextStyles.titleMedium.copyWith(color: AppColors.textWhite)),
+                if (contest.categories.isNotEmpty ||
+                    contest.badges.isNotEmpty) ...[
+                  Text(
+                    'Tags & Info',
+                    style: AppTextStyles.titleMedium
+                        .copyWith(color: AppColors.textWhite),
+                  ),
                   const SizedBox(height: 10),
                   Wrap(
-                    spacing: 8.0,
-                    runSpacing: 8.0,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
-                      ...contest.categories.map((cat) => Chip(
+                      ...contest.categories.map(
+                        (cat) => Chip(
                           label: Text(cat),
-                          backgroundColor: AppColors.accent.withOpacity(0.15),
-                          labelStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.accent),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          backgroundColor: AppColors.accent.withAlpha(38),
+                          labelStyle: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.accent),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
-                            side: BorderSide(color: AppColors.accent.withOpacity(0.3))
+                            side: BorderSide(
+                              color: AppColors.accent.withAlpha(77),
+                            ),
                           ),
-                        )),
-                      ...contest.badges.map((badge) => Chip(
+                        ),
+                      ),
+                      ...contest.badges.map(
+                        (badge) => Chip(
                           label: Text(badge),
-                          backgroundColor: AppColors.primaryLight.withOpacity(0.2),
-                          labelStyle: AppTextStyles.bodySmall.copyWith(color: AppColors.textLight),
-                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                            side: BorderSide(color: AppColors.primaryLight.withOpacity(0.3))
+                          backgroundColor: AppColors.primaryLight.withAlpha(51),
+                          labelStyle: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.textLight),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
                           ),
-                        )),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            side: BorderSide(
+                              color: AppColors.primaryLight.withAlpha(77),
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
                 ],
-
-                // Entry Button
-                if (entryUrl != null && entryUrl.isNotEmpty)
+                if (contest.entryUrl.isNotEmpty)
                   Center(
-                    child: PrimaryButton( // Using new PrimaryButton
+                    child: PrimaryButton(
                       text: 'Enter Sweepstakes',
-                      onPressed: () => _launchURL(entryUrl),
-                      // icon: Icons.launch, // PrimaryButton doesn't have icon param by default
+                      onPressed: () => _openWebView(contest),
                     ),
                   ),
-                
-                // Comment Section Integration
+                const SizedBox(height: 32),
+                CommentSection(contestId: contest.id),
                 const SizedBox(height: 24),
-                Text(
-                  'Comments',
-                  style: AppTextStyles.titleLarge.copyWith(color: AppColors.textWhite),
-                ),
-                Divider(height: 20, color: AppColors.primaryLight.withOpacity(0.5), thickness: 0.5), // Adjusted divider
-                CommentSection(sweepstakeId: contest.id),
-                const SizedBox(height: 24), // Padding at the end
               ],
             ),
           );
@@ -309,38 +531,48 @@ class _ContestDetailScreenState extends State<ContestDetailScreen> {
     );
   }
 
-  // Helper for a row of detail items
-  Widget _buildDetailRow(BuildContext context, List<Widget> children) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children.asMap().entries.map((entry) {
-        int idx = entry.key;
-        Widget widget = entry.value;
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(left: idx == 0 ? 0 : 8, right: idx == children.length - 1 ? 0 : 8),
-            child: widget,
-          ),
-        );
-      }).toList(),
-    );
-  }
+  Widget _buildDetailRow(BuildContext context, List<Widget> children) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children
+            .asMap()
+            .entries
+            .map(
+              (entry) => Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: entry.key == 0 ? 0 : 8,
+                    right: entry.key == children.length - 1 ? 0 : 8,
+                  ),
+                  child: entry.value,
+                ),
+              ),
+            )
+            .toList(),
+      );
 
-  // Helper widget for key details, now using new styles
-  Widget _buildDetailItem(IconData icon, String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 16, color: AppColors.textMuted),
-            const SizedBox(width: 6),
-            Text(label, style: AppTextStyles.labelMedium.copyWith(color: AppColors.textMuted)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(value, style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textWhite, fontWeight: FontWeight.w600)),
-      ],
-    );
-  }
+  Widget _buildDetailItem(IconData icon, String label, String value) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: AppColors.textMuted),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppTextStyles.labelMedium.copyWith(
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.textWhite,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      );
 }

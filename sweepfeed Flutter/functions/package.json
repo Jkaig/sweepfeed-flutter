@@ -1,26 +1,37 @@
 {
   "name": "functions",
-  "description": "Cloud Functions for Firebase",
   "scripts": {
-    "lint": "eslint .",
-    "serve": "firebase emulators:start --only functions",
-    "shell": "firebase functions:shell",
+    "lint": "eslint --ext .js,.ts .",
+    "build": "tsc",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "test": "jest",
+    "test:performance": "UPDATE_PERFORMANCE_BASELINES=false npm test -- --testNamePattern='Performance Regression Tests|CI/CD Performance Gate'",
+    "test:update-baselines": "UPDATE_PERFORMANCE_BASELINES=true npm test -- --testNamePattern='Performance Regression Tests'"
   },
   "engines": {
-    "node": "22"
+    "node": "20"
   },
   "main": "index.js",
   "dependencies": {
-    "firebase-admin": "^12.6.0",
-    "firebase-functions": "^6.0.1"
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.1.1",
+    "@google-cloud/monitoring": "^4.1.0",
+    "googleapis": "^144.0.0",
+    "node-fetch": "^2.7.0"
   },
   "devDependencies": {
-    "eslint": "^8.15.0",
+    "@typescript-eslint/eslint-plugin": "^5.12.0",
+    "@typescript-eslint/parser": "^5.12.0",
+    "eslint": "^8.9.0",
     "eslint-config-google": "^0.14.0",
-    "firebase-functions-test": "^3.1.0"
+    "eslint-plugin-import": "^2.25.4",
+    "firebase-functions-test": "^3.1.0",
+    "jest": "^29.7.0",
+    "typescript": "^5.9.3"
   },
   "private": true
 }

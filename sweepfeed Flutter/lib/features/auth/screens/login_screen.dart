@@ -1,11 +1,17 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
-import 'package:sweep_feed/core/widgets/custom_text_field.dart';
-import 'package:sweep_feed/core/widgets/primary_button.dart';
-import 'package:sweep_feed/core/widgets/social_sign_in_button.dart';
-import 'package:sweep_feed/core/theme/app_colors.dart';
-import 'package:sweep_feed/core/theme/app_text_styles.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_spacing.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/custom_text_field.dart';
+import '../../../core/widgets/error_display.dart';
+import '../../../core/widgets/primary_button.dart';
+import '../../../core/widgets/social_sign_in_button.dart';
+// Removed non-existent import
 import '../services/auth_service.dart';
-import './register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,21 +23,40 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final AuthService _authService = AuthService();
 
   bool _isLoading = false;
   bool _showEmailForm = false;
+  bool _showPhoneForm = false;
   String? _errorMessage; // Keep for auth errors not handled by service UI
+  bool _biometricsAvailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometrics();
+  }
+
+  Future<void> _checkBiometrics() async {
+    final isAvailable = await _authService.isBiometricAvailable();
+    if (mounted) {
+      setState(() {
+        _biometricsAvailable = isAvailable;
+      });
+    }
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  Future<void> _signInWithEmail() async {
+  Future<void> _sendSignInLinkToEmail() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -40,17 +65,40 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
     try {
-      // Assuming AuthService.signInWithEmail updates UI or navigates on success
-      // and throws an error that can be caught here for specific UI feedback.
-      await _authService.signInWithEmail(
+      await _authService.sendSignInLinkToEmail(
         _emailController.text.trim(),
-        _passwordController.text,
-        context, // Pass context if needed by service for navigation/dialogs
+        context,
       );
-      // If successful, navigation should be handled by AuthWrapper or SplashScreen logic
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString(); // Display error message
+        _errorMessage =
+            'Unable to send sign-in link. Please check your email and try again.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signInWithPhone() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      await _authService.verifyPhoneNumber(
+        _phoneController.text.trim(),
+        context,
+      );
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Unable to verify phone number. Please try again.';
       });
     } finally {
       if (mounted) {
@@ -68,9 +116,12 @@ class _LoginScreenState extends State<LoginScreen> {
       // Navigation handled by AuthWrapper/SplashScreen
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _errorMessage = e.toString();
-        });
+        final errorStr = e.toString();
+        if (!errorStr.contains('canceled') && !errorStr.contains('cancelled')) {
+          setState(() {
+            _errorMessage = errorStr;
+          });
+        }
       }
     } finally {
       if (mounted) {
@@ -86,9 +137,12 @@ class _LoginScreenState extends State<LoginScreen> {
       // Navigation handled by AuthWrapper/SplashScreen
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _errorMessage = e.toString();
-        });
+        final errorStr = e.toString();
+        if (!errorStr.contains('canceled') && !errorStr.contains('cancelled')) {
+          setState(() {
+            _errorMessage = errorStr;
+          });
+        }
       }
     } finally {
       if (mounted) {
@@ -97,190 +151,210 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  void _navigateToRegister() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const RegisterScreen()),
-    );
+  Future<void> _handleBiometricSignIn() async {
+    setState(() => _isLoading = true);
+    try {
+      final success = await _authService.signInWithBiometrics();
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Biometric sign-in failed.')),
+        );
+      }
+      // On success, AuthWrapper will handle navigation
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.primaryDark, // Updated background color
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Title and Logo
-              Text(
-                'Find your next win!',
-                style: AppTextStyles.headlineSmall.copyWith(color: AppColors.textLight),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Sweep Feed',
-                style: AppTextStyles.displaySmall.copyWith(color: AppColors.textWhite),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 32),
-              Center(
-                child: Image.asset(
-                  'assets/icon/appicon.png', // Assuming this is a transparent logo suitable for dark bg
-                  width: 150, // Adjusted size
-                  height: 150,
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: AppColors.primaryDark, // Updated background color
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.screenPadding),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Title and Logo
+                Text(
+                  'Find your next win!',
+                  style: AppTextStyles.headlineSmall
+                      .copyWith(color: AppColors.textLight),
+                  textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 48),
+                const SizedBox(height: AppSpacing.small),
+                Text(
+                  'SweepFeed',
+                  style: AppTextStyles.displaySmall
+                      .copyWith(color: AppColors.cyberYellow),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: AppSpacing.xlarge),
+                Center(
+                  child: Image.asset(
+                    'assets/icon/appicon.png', // Assuming this is a transparent logo suitable for dark bg
+                    width: 150, // Adjusted size
+                    height: 150,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxlarge),
 
-              // Error message display
-              if (_errorMessage != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 24),
-                  decoration: BoxDecoration(
-                    color: AppColors.errorRed.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.errorRed.withOpacity(0.5)),
-                  ),
-                  child: Text(
-                    _errorMessage!,
-                    style: AppTextStyles.bodyMedium.copyWith(color: AppColors.errorRed),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
-              
-              // Sign in options
-              if (!_showEmailForm) ...[
-                PrimaryButton(
-                  text: 'Sign in with Email',
-                  onPressed: () => setState(() => _showEmailForm = true),
-                  // This button's style will be different from PrimaryButton's accent
-                  // Consider a SecondaryButton or styling PrimaryButton
-                ),
-                const SizedBox(height: 16),
-                SocialSignInButton(
-                  providerName: "Google",
-                  icon: Image.asset('assets/icon/google_logo.png', height: 24, width: 24),
-                  onPressed: _isLoading ? (){} : _handleGoogleSignIn,
-                  backgroundColor: Colors.white,
-                  textColor: Colors.black87,
-                ),
-                const SizedBox(height: 16),
-                SocialSignInButton(
-                  providerName: "Apple",
-                  // Using Icon as apple_logo.png is not available
-                  icon: const Icon(Icons.apple, size: 28, color: Colors.white),
-                  onPressed: _isLoading ? (){} : _handleAppleSignIn,
-                  backgroundColor: Colors.black, // Or AppColors.textWhite for consistency if needed
-                  textColor: Colors.white,
-                ),
-              ],
+                // Error message display
+                if (_errorMessage != null)
+                  ErrorDisplay(message: _errorMessage!),
 
-              // Email Sign In Form
-              if (_showEmailForm) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => setState(() => _showEmailForm = false),
-                    icon: const Icon(Icons.arrow_back, color: AppColors.textLight),
-                    label: Text('Back', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textLight)),
+                // Sign in options
+                if (!_showEmailForm && !_showPhoneForm) ...[
+                  PrimaryButton(
+                    text: 'Sign in with Email',
+                    onPressed: () => setState(() => _showEmailForm = true),
                   ),
-                ),
-                const SizedBox(height: 24),
-                Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      CustomTextField(
-                        controller: _emailController,
-                        label: 'Email',
-                        prefixIcon: Icons.email_outlined,
-                        keyboardType: TextInputType.emailAddress,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter your email';
-                          }
-                          if (!value.contains('@') || !value.contains('.')) {
-                            return 'Please enter a valid email';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      CustomTextField(
-                        controller: _passwordController,
-                        label: 'Password',
-                        prefixIcon: Icons.lock_outlined,
-                        obscureText: true,
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Please enter your password';
-                          }
-                          if (value.length < 6) {
-                            return 'Password must be at least 6 characters';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {
-                            // TODO: Implement forgot password
-                          },
-                          child: Text(
-                            'Forgot Password?',
-                            style: AppTextStyles.bodySmall.copyWith(color: AppColors.accent),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      PrimaryButton(
-                        text: 'Sign In',
-                        onPressed: _signInWithEmail,
-                        isLoading: _isLoading,
-                      ),
-                    ],
+                  const SizedBox(height: AppSpacing.medium),
+                  PrimaryButton(
+                    text: 'Sign in with Phone',
+                    onPressed: () => setState(() => _showPhoneForm = true),
                   ),
-                ),
-              ],
-
-              const SizedBox(height: 32),
-
-              // Sign up link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "Don't have an account? ",
-                    style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textLight),
-                  ),
-                  TextButton(
-                    onPressed: _navigateToRegister,
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  const SizedBox(height: AppSpacing.medium),
+                  SocialSignInButton(
+                    providerName: 'Google',
+                    icon: Image.asset(
+                      'assets/icon/google_logo.png',
+                      height: 24,
+                      width: 24,
                     ),
-                    child: Text(
-                      'Sign up',
-                      style: AppTextStyles.bodyMedium.copyWith(color: AppColors.accent, fontWeight: FontWeight.bold),
+                    onPressed: _isLoading ? () {} : _handleGoogleSignIn,
+                    backgroundColor: Colors.white,
+                    textColor: Colors.black87,
+                  ),
+                  const SizedBox(height: AppSpacing.medium),
+                  if (Platform.isIOS)
+                    SignInWithAppleButton(
+                      onPressed: _isLoading ? () {} : _handleAppleSignIn,
+                    ),
+                  const SizedBox(height: AppSpacing.medium),
+                  if (_biometricsAvailable)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.fingerprint,
+                        color: Colors.white,
+                        size: 48,
+                      ),
+                      onPressed: _isLoading ? null : _handleBiometricSignIn,
+                      tooltip: 'Sign in with biometrics',
+                    ),
+                ],
+
+                // Email Sign In Form
+                if (_showEmailForm) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() {
+                        _showEmailForm = false;
+                        _showPhoneForm = false;
+                      }),
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.textLight,
+                      ),
+                      label: Text(
+                        'Back',
+                        style: AppTextStyles.bodyMedium
+                            .copyWith(color: AppColors.textLight),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.large),
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        CustomTextField(
+                          controller: _emailController,
+                          label: 'Email',
+                          prefixIcon: Icons.email_outlined,
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your email';
+                            }
+                            if (!value.contains('@') || !value.contains('.')) {
+                              return 'Please enter a valid email';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.large),
+                        PrimaryButton(
+                          text: 'Send Sign-In Link',
+                          onPressed: _sendSignInLinkToEmail,
+                          isLoading: _isLoading,
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ),
-            ],
+
+                // Phone Sign In Form
+                if (_showPhoneForm) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() {
+                        _showEmailForm = false;
+                        _showPhoneForm = false;
+                      }),
+                      icon: const Icon(
+                        Icons.arrow_back,
+                        color: AppColors.textLight,
+                      ),
+                      label: Text(
+                        'Back',
+                        style: AppTextStyles.bodyMedium
+                            .copyWith(color: AppColors.textLight),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.large),
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        CustomTextField(
+                          controller: _phoneController,
+                          label: 'Phone Number',
+                          prefixIcon: Icons.phone_outlined,
+                          keyboardType: TextInputType.phone,
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your phone number';
+                            }
+                            if (!value.startsWith('+')) {
+                              return 'Please include country code (e.g., +1 for US)';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.large),
+                        PrimaryButton(
+                          text: 'Send Sign-In Code',
+                          onPressed: _signInWithPhone,
+                          isLoading: _isLoading,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 32),
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+      );
 }

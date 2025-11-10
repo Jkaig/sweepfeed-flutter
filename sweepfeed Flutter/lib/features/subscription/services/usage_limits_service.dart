@@ -1,11 +1,10 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UsageLimitsService with ChangeNotifier {
-  static final UsageLimitsService _instance = UsageLimitsService._internal();
   factory UsageLimitsService() => _instance;
   UsageLimitsService._internal();
+  static final UsageLimitsService _instance = UsageLimitsService._internal();
 
   // Configuration values
   static const int _maxFreeTierViewsPerDay = 15;
@@ -51,7 +50,10 @@ class UsageLimitsService with ChangeNotifier {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final viewsCountDay = DateTime(
-          _viewsCountDate!.year, _viewsCountDate!.month, _viewsCountDate!.day);
+        _viewsCountDate!.year,
+        _viewsCountDate!.month,
+        _viewsCountDate!.day,
+      );
 
       if (viewsCountDay.isBefore(today)) {
         // Reset views count for a new day
@@ -122,7 +124,9 @@ class UsageLimitsService with ChangeNotifier {
 
     if (_viewsCountDate != null) {
       await prefs.setString(
-          _viewsCountDateKey, _viewsCountDate!.toIso8601String());
+        _viewsCountDateKey,
+        _viewsCountDate!.toIso8601String(),
+      );
     }
   }
 

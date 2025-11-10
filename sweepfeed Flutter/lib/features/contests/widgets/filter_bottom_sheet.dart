@@ -1,342 +1,261 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// Placeholder data - replace with actual data source if available
-const List<String> _allCategories = [
-  'Cash',
-  'Travel',
-  'Electronics',
-  'Gift Cards',
-  'Experiences',
-  'Other'
-];
-const List<String> _allEntryMethods = [
-  'Gleam',
-  'Website Form',
-  'Social Media',
-  'Referral',
-  'Daily',
-  'Instant Win'
-];
+import '../../../core/providers/providers.dart';
+import '../../../core/theme/app_colors.dart';
+import '../models/advanced_filter_model.dart';
 
-// Placeholder data for new filters - replace with actual data if available
-const List<String> _allPlatforms = [
-  'Gleam',
-  'Rafflecopter',
-  'SweepWidget',
-  'Twitter',
-  'Instagram',
-  'Facebook',
-  'Other'
-];
-const List<String> _allEntryFrequencies = [
-  'One-time',
-  'Daily',
-  'Weekly',
-  'Monthly'
-];
-
-class FilterBottomSheet extends StatefulWidget {
-  final Map<String, dynamic> initialFilters;
-  final Function(Map<String, dynamic>) onApplyFilters;
-
-  const FilterBottomSheet({
-    super.key,
-    required this.initialFilters,
-    required this.onApplyFilters,
-  });
+class FilterBottomSheet extends ConsumerStatefulWidget {
+  const FilterBottomSheet({super.key});
 
   @override
-  _FilterBottomSheetState createState() => _FilterBottomSheetState();
+  ConsumerState<FilterBottomSheet> createState() => _FilterBottomSheetState();
 }
 
-class _FilterBottomSheetState extends State<FilterBottomSheet> {
-  late Map<String, dynamic> _currentFilters;
-
-  // Temporary state for UI elements
-  late Set<String> _selectedCategories;
-  late Set<String> _selectedEntryMethods;
-  late Set<String> _selectedPlatforms; // New filter
-  late Set<String> _selectedEntryFrequencies; // New filter
-  bool _endingSoon = false;
-  double? _minPrize; // Using null for no minimum
-  String? _newContestDuration; // New filter: null, '24h', or '48h'
+class _FilterBottomSheetState extends ConsumerState<FilterBottomSheet> {
+  RangeValues _prizeValueRange = const RangeValues(0, 10000);
+  List<String> _selectedCategories = [];
+  List<PrizeType> _selectedPrizeTypes = [];
 
   @override
   void initState() {
     super.initState();
-    _currentFilters = Map.from(widget.initialFilters);
+    final currentFilter = ref.read(advancedFilterProvider);
+    if (currentFilter != null) {
+      _prizeValueRange = RangeValues(
+        currentFilter.prizeValueRange?.min ?? 0,
+        currentFilter.prizeValueRange?.max ?? 10000,
+      );
+      _selectedCategories = List.from(currentFilter.selectedCategories);
+      _selectedPrizeTypes = List.from(currentFilter.selectedPrizeTypes);
+    }
+  }
 
-    // Initialize temporary UI state from initial filters
-    _selectedCategories = Set<String>.from(_currentFilters['categories'] ?? []);
-    _selectedEntryMethods =
-        Set<String>.from(_currentFilters['entryMethods'] ?? []);
-    _selectedPlatforms = Set<String>.from(_currentFilters['platforms'] ?? []); // New
-    _selectedEntryFrequencies =
-        Set<String>.from(_currentFilters['entryFrequencies'] ?? []); // New
-    _endingSoon = _currentFilters['endingSoon'] ?? false;
-    _minPrize = _currentFilters['minPrize']?.toDouble(); // Allow null
-    _newContestDuration = _currentFilters['newContestDuration']; // New
+  void _applyFilters() {
+    final filter = AdvancedFilter(
+      selectedCategories: _selectedCategories,
+      selectedPrizeTypes: _selectedPrizeTypes,
+      prizeValueRange: PrizeValueRange(
+        min: _prizeValueRange.start,
+        max: _prizeValueRange.end,
+      ),
+    );
+
+    ref.read(advancedFilterProvider.notifier).state = filter;
+
+    ref.read(analyticsServiceProvider).logFilterApplied(filters: {
+      'categories_count': _selectedCategories.length,
+      'prize_types_count': _selectedPrizeTypes.length,
+      'min_prize': _prizeValueRange.start.round(),
+      'max_prize': _prizeValueRange.end.round(),
+    });
+
+    Navigator.of(context).pop(filter);
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _prizeValueRange = const RangeValues(0, 10000);
+      _selectedCategories.clear();
+      _selectedPrizeTypes.clear();
+    });
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      // Add padding to respect safe area (notch, navigation bar)
-      padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-          left: 16,
-          right: 16,
-          top: 16),
-      child: SingleChildScrollView(
-        // Allow content to scroll if it overflows
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Filters',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                TextButton(
-                  onPressed: () {
-                    // Reset temporary state and apply empty filters
-                    setState(() {
-                      _selectedCategories = {};
-                      _selectedEntryMethods = {};
-                      _selectedPlatforms = {}; // Reset new filter
-                      _selectedEntryFrequencies = {}; // Reset new filter
-                      _endingSoon = false;
-                      _minPrize = null;
-                      _newContestDuration = null; // Reset new filter
-                      _currentFilters = {};
-                    });
-                    widget
-                        .onApplyFilters({}); // Apply empty filters immediately
-                    Navigator.pop(context); // Close sheet
-                  },
-                  child: const Text('Reset'),
-                ),
-              ],
-            ),
-            const Divider(height: 24),
-
-            // --- Ending Soon Filter ---
-            SwitchListTile(
-              title: const Text('Ending Soon'),
-              value: _endingSoon,
-              onChanged: (value) {
-                setState(() {
-                  _endingSoon = value;
-                });
-              },
-              contentPadding: EdgeInsets.zero,
-            ),
-            const SizedBox(height: 16),
-
-            // --- Categories Filter ---
-            _buildFilterSection(
-              title: 'Categories',
-              options: _allCategories,
-              selectedOptions: _selectedCategories,
-              onChanged: (value, isSelected) {
-                setState(() {
-                  if (isSelected) {
-                    _selectedCategories.add(value);
-                  } else {
-                    _selectedCategories.remove(value);
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // --- Entry Methods Filter ---
-            _buildFilterSection(
-              title: 'Entry Methods',
-              options: _allEntryMethods,
-              selectedOptions: _selectedEntryMethods,
-              onChanged: (value, isSelected) {
-                setState(() {
-                  if (isSelected) {
-                    _selectedEntryMethods.add(value);
-                  } else {
-                    _selectedEntryMethods.remove(value);
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // --- Platforms Filter ---
-            _buildFilterSection(
-              title: 'Platform',
-              options: _allPlatforms,
-              selectedOptions: _selectedPlatforms,
-              onChanged: (value, isSelected) {
-                setState(() {
-                  if (isSelected) {
-                    _selectedPlatforms.add(value);
-                  } else {
-                    _selectedPlatforms.remove(value);
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // --- Entry Frequency Filter ---
-            _buildFilterSection(
-              title: 'Entry Frequency',
-              options: _allEntryFrequencies,
-              selectedOptions: _selectedEntryFrequencies,
-              onChanged: (value, isSelected) {
-                setState(() {
-                  if (isSelected) {
-                    _selectedEntryFrequencies.add(value);
-                  } else {
-                    _selectedEntryFrequencies.remove(value);
-                  }
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // --- New Contest Filter ---
-            Text('New Contests',
-                style: Theme.of(context).textTheme.titleMedium),
-            Wrap(
-              spacing: 8.0,
-              children: [
-                ChoiceChip(
-                  label: const Text('Any'),
-                  selected: _newContestDuration == null,
-                  onSelected: (selected) {
-                    setState(() {
-                      _newContestDuration = selected ? null : _newContestDuration;
-                    });
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Last 24h'),
-                  selected: _newContestDuration == '24h',
-                  onSelected: (selected) {
-                    setState(() {
-                      _newContestDuration = selected ? '24h' : null;
-                    });
-                  },
-                ),
-                ChoiceChip(
-                  label: const Text('Last 48h'),
-                  selected: _newContestDuration == '48h',
-                  onSelected: (selected) {
-                    setState(() {
-                      _newContestDuration = selected ? '48h' : null;
-                    });
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // --- Min Prize Filter ---
-            Text('Minimum Prize Value',
-                style: Theme.of(context).textTheme.titleMedium),
-            // Simple example using ChoiceChips, could use Slider or TextField
-            Wrap(
-              spacing: 8.0,
-              children: [0, 100, 500, 1000, 5000].map((value) {
-                bool isSelected = _minPrize == value.toDouble();
-                return ChoiceChip(
-                  label: Text(value == 0 ? 'Any' : '\$$value+'),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    setState(() {
-                      _minPrize = selected ? value.toDouble() : null;
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-
-            // --- Apply Button ---
-            Center(
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  minimumSize:
-                      const Size(double.infinity, 40), // Make button wider
-                ),
-                onPressed: () {
-                  // Construct the final filter map from the temporary state
-                  final Map<String, dynamic> appliedFilters = {};
-                  if (_selectedCategories.isNotEmpty) {
-                    appliedFilters['categories'] = _selectedCategories.toList();
-                  }
-                  if (_selectedEntryMethods.isNotEmpty) {
-                    appliedFilters['entryMethods'] =
-                        _selectedEntryMethods.toList();
-                  }
-                  if (_selectedPlatforms.isNotEmpty) { // New
-                    appliedFilters['platforms'] = _selectedPlatforms.toList();
-                  }
-                  if (_selectedEntryFrequencies.isNotEmpty) { // New
-                    appliedFilters['entryFrequencies'] =
-                        _selectedEntryFrequencies.toList();
-                  }
-                  if (_endingSoon) {
-                    // HomeScreen logic translates this to date query
-                    // Or adjust ContestService to handle 'endingSoon' directly
-                    appliedFilters['endingSoon'] = true;
-                  }
-                  if (_newContestDuration != null) { // New
-                    appliedFilters['newContestDuration'] = _newContestDuration;
-                  }
-                  if (_minPrize != null && _minPrize! > 0) {
-                    // Exclude 'Any' (0)
-                    appliedFilters['minPrize'] = _minPrize;
-                  }
-
-                  widget.onApplyFilters(appliedFilters);
-                  Navigator.pop(context);
-                },
-                child: const Text('Apply Filters'),
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: AppColors.primaryMedium,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
+          ),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Filters',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(color: Colors.white),
+                  ),
+                  TextButton(
+                    onPressed: _clearFilters,
+                    child: const Text(
+                      'Clear All',
+                      style: TextStyle(color: AppColors.accent),
+                    ),
+                  ),
+                ],
               ),
-            )
-          ],
+              const SizedBox(height: 24),
+              _buildPrizeValueSlider(),
+              const SizedBox(height: 24),
+              _buildPrizeTypeSelection(),
+              const SizedBox(height: 24),
+              _buildCategorySelection(),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 50),
+                        side: const BorderSide(color: AppColors.accent),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: _applyFilters,
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 50),
+                        backgroundColor: AppColors.accent,
+                      ),
+                      child: const Text('Apply Filters'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+      );
 
-  // Helper widget for building sections with chips
-  Widget _buildFilterSection({
-    required String title,
-    required List<String> options,
-    required Set<String> selectedOptions,
-    required Function(String, bool) onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8.0,
-          runSpacing: 4.0,
-          children: options.map((option) {
-            final isSelected = selectedOptions.contains(option);
-            return FilterChip(
-              label: Text(option),
-              selected: isSelected,
-              onSelected: (selected) => onChanged(option, selected),
-              // Add styling as needed
-            );
-          }).toList(),
-        ),
-      ],
+  Widget _buildPrizeValueSlider() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Prize Value: \$${_prizeValueRange.start.round()} - \$${_prizeValueRange.end.round()}',
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          RangeSlider(
+            values: _prizeValueRange,
+            max: 10000,
+            divisions: 100,
+            activeColor: AppColors.accent,
+            inactiveColor: AppColors.primaryLight,
+            labels: RangeLabels(
+              '\$${_prizeValueRange.start.round()}',
+              '\$${_prizeValueRange.end.round()}',
+            ),
+            onChanged: (values) {
+              setState(() {
+                _prizeValueRange = values;
+              });
+            },
+          ),
+        ],
+      );
+
+  Widget _buildPrizeTypeSelection() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Prize Types',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: PrizeType.values.map((type) {
+              final isSelected = _selectedPrizeTypes.contains(type);
+              return FilterChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(type.emoji),
+                    const SizedBox(width: 4),
+                    Text(type.label),
+                  ],
+                ),
+                selected: isSelected,
+                onSelected: (selected) {
+                  setState(() {
+                    if (selected) {
+                      _selectedPrizeTypes.add(type);
+                    } else {
+                      _selectedPrizeTypes.remove(type);
+                    }
+                  });
+                },
+                selectedColor: AppColors.accent.withValues(alpha: 0.3),
+                checkmarkColor: AppColors.accent,
+                backgroundColor: AppColors.primaryLight,
+                labelStyle: TextStyle(
+                  color: isSelected ? Colors.white : AppColors.textLight,
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      );
+
+  Widget _buildCategorySelection() {
+    final categories = ref.watch(categoriesProvider);
+
+    return categories.when(
+      data: (categoryList) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Categories',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: categoryList.map((category) {
+              final isSelected = _selectedCategories.contains(category.id);
+              return FilterChip(
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(category.emoji),
+                    const SizedBox(width: 4),
+                    Text(category.name),
+                  ],
+                ),
+                selected: isSelected,
+                onSelected: (selected) {
+                  setState(() {
+                    if (selected) {
+                      _selectedCategories.add(category.id);
+                    } else {
+                      _selectedCategories.remove(category.id);
+                    }
+                  });
+                },
+                selectedColor: AppColors.accent.withValues(alpha: 0.3),
+                checkmarkColor: AppColors.accent,
+                backgroundColor: AppColors.primaryLight,
+                labelStyle: TextStyle(
+                  color: isSelected ? Colors.white : AppColors.textLight,
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+      loading: () => const CircularProgressIndicator(color: AppColors.accent),
+      error: (error, stack) => const SizedBox.shrink(),
     );
   }
 }
