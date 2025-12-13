@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:sweepfeed/core/services/dust_bunnies_service.dart';
+import '../../../core/services/dust_bunnies_service.dart';
 
 import '../../../core/utils/logger.dart';
 

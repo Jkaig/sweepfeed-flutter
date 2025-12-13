@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../core/providers/providers.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
-import '../models/daily_challenge_model.dart';
-import '../../../challenges/services/daily_challenge_service.dart';
-import '../../../../core/providers/providers.dart';
+import '../../challenges/models/daily_challenge_model.dart';
 
 class DailyChallengeCard extends ConsumerWidget {
   final DailyChallengeDisplay challenge;
 
   const DailyChallengeCard({
-    super.key,
-    required this.challenge,
+    required this.challenge, super.key,
   });
 
   @override
@@ -38,7 +37,7 @@ class DailyChallengeCard extends ConsumerWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            isComplete ? AppColors.successGreen.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.05),
+            if (isComplete) AppColors.successGreen.withValues(alpha: 0.1) else Colors.white.withValues(alpha: 0.05),
             Colors.transparent,
           ],
         ),
@@ -130,7 +129,7 @@ class DailyChallengeCard extends ConsumerWidget {
                       ),
                       child: const Text('Claim Reward!', style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
-                  ).animate().pulse(duration: 1.seconds)
+                  ).animate().fadeIn(duration: 1.seconds)
                 else
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,

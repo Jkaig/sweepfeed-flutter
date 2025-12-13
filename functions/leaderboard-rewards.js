@@ -1,8 +1,10 @@
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {logger} = require("firebase-functions/v2");
+const {initializeApp} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
 
+initializeApp();
 const db = getFirestore();
 const fcm = getMessaging();
 
@@ -10,7 +12,12 @@ const fcm = getMessaging();
  * Monthly Leaderboard Rewards
  * Runs on the 1st of every month at 00:00
  */
-exports.processMonthlyRewards = onSchedule("1 of month 00:00", async (event) => {
+exports.processMonthlyRewards = onSchedule(
+    {
+        schedule: "0 0 1 * *", // 1st of month at 00:00
+        timeZone: "UTC",
+    },
+    async (event) => {
   logger.info("Starting monthly leaderboard rewards processing...");
 
   try {

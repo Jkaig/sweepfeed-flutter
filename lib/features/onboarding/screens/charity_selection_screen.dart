@@ -55,7 +55,7 @@ class CharitySelectionScreen extends ConsumerWidget {
                   Expanded(
                     child: charitiesAsync.when(
                       loading: () => const Center(child: LoadingIndicator()),
-                      error: (err, stack) => Center(
+                      error: (err, stack) => const Center(
                         child: Text(
                           'Failed to load charities',
                           style: TextStyle(color: AppColors.errorRed),

@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
-import '../../auth/services/auth_service.dart';
+import '../../auth/services/auth_service.dart' hide authServiceProvider;
 import '../models/challenge.dart';
 
 class ChallengeService {

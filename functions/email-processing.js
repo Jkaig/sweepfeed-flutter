@@ -1,14 +1,17 @@
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
+const {onRequest} = require("firebase-functions/v2/https");
+const {logger} = require("firebase-functions/v2");
+const {initializeApp} = require("firebase-admin/app");
+const {getFirestore, Timestamp} = require("firebase-admin/firestore");
 const mailgun = require('mailgun-js');
 const crypto = require('crypto');
 const { sendPushNotification } = require('./notifications');
 
-const db = admin.firestore();
+initializeApp();
+const db = getFirestore();
 
-// Mailgun configuration - uses environment variables or Firebase config
-const mailgunApiKey = functions.config().mailgun?.api_key || process.env.MAILGUN_API_KEY || 'YOUR_MAILGUN_API_KEY';
-const mailgunDomain = functions.config().mailgun?.domain || process.env.MAILGUN_DOMAIN || 'sweepfeed.app';
+// Mailgun configuration - uses environment variables
+const mailgunApiKey = process.env.MAILGUN_API_KEY || 'YOUR_MAILGUN_API_KEY';
+const mailgunDomain = process.env.MAILGUN_DOMAIN || 'sweepfeed.app';
 
 // Note: Mailgun client is only needed for sending emails, not receiving
 // For receiving, Mailgun sends webhooks to this function
@@ -58,7 +61,7 @@ function analyzeEmailCategory(emailData) {
 }
 
 
-exports.processIncomingEmail = functions.https.onRequest(async (req, res) => {
+exports.processIncomingEmail = onRequest(async (req, res) => {
     if (req.method !== 'POST') {
         res.status(405).send('Method Not Allowed');
         return;
@@ -109,7 +112,7 @@ exports.processIncomingEmail = functions.https.onRequest(async (req, res) => {
             from: sender,
             subject: subject,
             body: body,
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            timestamp: Timestamp.now(),
             isRead: false,
             category: 'general', // Default category
         };

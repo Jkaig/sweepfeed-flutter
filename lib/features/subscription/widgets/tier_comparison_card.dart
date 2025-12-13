@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../models/subscription_tiers.dart';
-import '../services/tier_management_service.dart';
 
 /// Widget that displays a detailed comparison of subscription tiers
 class TierComparisonCard extends ConsumerWidget {
@@ -260,11 +259,11 @@ class TierComparisonCard extends ConsumerWidget {
       ],
     );
 
-  Widget _buildFeatureItem(String feature) {
-    final isHighlight = feature.contains('Unlimited') ||
-        feature.contains('Exclusive') ||
-        feature.contains('Premium') ||
-        feature.contains('Ad-free');
+  Widget _buildFeatureItem(FeatureItem feature) {
+    final isHighlight = feature.title.contains('Unlimited') ||
+        feature.title.contains('Exclusive') ||
+        feature.title.contains('Premium') ||
+        feature.title.contains('Ad-free');
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -274,18 +273,21 @@ class TierComparisonCard extends ConsumerWidget {
           Container(
             margin: const EdgeInsets.only(top: 2),
             child: Icon(
-              Icons.check_circle,
+              feature.included ? Icons.check_circle : Icons.cancel,
               size: 16,
-              color: isHighlight ? tier.color : Colors.green,
+              color: feature.included
+                  ? (isHighlight ? tier.color : Colors.green)
+                  : Colors.grey,
             ),
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              feature,
+              feature.title,
               style: AppTextStyles.bodySmall.copyWith(
                 fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
-                color: isHighlight ? tier.color : null,
+                color: isHighlight ? tier.color : (feature.included ? null : Colors.grey),
+                decoration: feature.included ? null : TextDecoration.lineThrough,
               ),
             ),
           ),

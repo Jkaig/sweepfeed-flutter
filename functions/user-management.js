@@ -1,6 +1,12 @@
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
-const db = admin.firestore();
+const {onSchedule} = require("firebase-functions/v2/scheduler");
+const {onCall} = require("firebase-functions/v2/https");
+const {onDocumentUpdated} = require("firebase-functions/v2/firestore");
+const {logger} = require("firebase-functions/v2");
+const {initializeApp} = require("firebase-admin/app");
+const {getFirestore, Timestamp} = require("firebase-admin/firestore");
+
+initializeApp();
+const db = getFirestore();
 
 // ============================================================================
 // ACCOUNT DELETION - GDPR/CCPA Compliant
@@ -12,13 +18,15 @@ const db = admin.firestore();
  * Process scheduled account deletions daily
  * Runs every day at 3:00 AM to process accounts marked for deletion
  */
-exports.processScheduledDeletions = functions.pubsub
-    .schedule('0 3 * * *')
-    .timeZone('America/New_York')
-    .onRun(async (context) => {
-        console.log('Starting scheduled account deletion process...');
+exports.processScheduledDeletions = onSchedule(
+    {
+        schedule: '0 3 * * *',
+        timeZone: 'America/New_York',
+    },
+    async (event) => {
+        logger.info('Starting scheduled account deletion process...');
 
-        const now = admin.firestore.Timestamp.now();
+        const now = Timestamp.now();
 
         try {
             // Find users marked for deletion whose grace period has expired
@@ -104,18 +112,18 @@ async function deleteUserAccount(userId, userData) {
         .get();
     referralCodesSnapshot.forEach(doc => batch.delete(doc.ref));
 
-    // 4. Delete user's purchases (keep anonymized record for accounting)
-    const purchasesSnapshot = await db.collection('purchases')
-        .where('userId', '==', userId)
-        .get();
-    purchasesSnapshot.forEach(doc => {
-        // Anonymize instead of delete for financial records
-        batch.update(doc.ref, {
-            userId: 'DELETED_USER',
-            userEmail: null,
-            anonymizedAt: admin.firestore.FieldValue.serverTimestamp()
+        // 4. Delete user's purchases (keep anonymized record for accounting)
+        const purchasesSnapshot = await db.collection('purchases')
+            .where('userId', '==', userId)
+            .get();
+        purchasesSnapshot.forEach(doc => {
+            // Anonymize instead of delete for financial records
+            batch.update(doc.ref, {
+                userId: 'DELETED_USER',
+                userEmail: null,
+                anonymizedAt: Timestamp.now()
+            });
         });
-    });
 
     // 5. Remove user from any contest entry lists (anonymize)
     const contestEntriesSnapshot = await db.collectionGroup('entries')
@@ -141,25 +149,25 @@ async function deleteUserAccount(userId, userData) {
         });
     });
 
-    // 7. Log deletion for audit purposes (GDPR requires proof of deletion)
-    const deletionLogRef = db.collection('deletion_logs').doc();
-    batch.set(deletionLogRef, {
-        userId,
-        deletedAt: admin.firestore.FieldValue.serverTimestamp(),
-        userEmail: userData.email || null,
-        accountCreatedAt: userData.createdAt || null,
-        deletionRequestedAt: userData.deletionMarkedAt || null,
-        signInProvider: userData.signInProvider || 'unknown',
-        dataDeleted: [
-            'user_document',
-            'user_subcollections',
-            'user_activity',
-            'referral_codes',
-            'purchases_anonymized',
-            'contest_entries_anonymized',
-            'comments_anonymized'
-        ]
-    });
+        // 7. Log deletion for audit purposes (GDPR requires proof of deletion)
+        const deletionLogRef = db.collection('deletion_logs').doc();
+        batch.set(deletionLogRef, {
+            userId,
+            deletedAt: Timestamp.now(),
+            userEmail: userData.email || null,
+            accountCreatedAt: userData.createdAt || null,
+            deletionRequestedAt: userData.deletionMarkedAt || null,
+            signInProvider: userData.signInProvider || 'unknown',
+            dataDeleted: [
+                'user_document',
+                'user_subcollections',
+                'user_activity',
+                'referral_codes',
+                'purchases_anonymized',
+                'contest_entries_anonymized',
+                'comments_anonymized'
+            ]
+        });
 
     // 8. Delete the main user document
     batch.delete(db.collection('users').doc(userId));
@@ -167,38 +175,42 @@ async function deleteUserAccount(userId, userData) {
     // Commit all Firestore changes
     await batch.commit();
 
-    // 9. Delete Firebase Auth user (must be done after Firestore)
-    try {
-        await admin.auth().deleteUser(userId);
-        console.log(`Firebase Auth user ${userId} deleted`);
-    } catch (authError) {
-        // User might already be deleted from Auth
-        if (authError.code !== 'auth/user-not-found') {
-            throw authError;
+        // 9. Delete Firebase Auth user (must be done after Firestore)
+        try {
+            const {getAuth} = require("firebase-admin/auth");
+            const auth = getAuth();
+            await auth.deleteUser(userId);
+            logger.info(`Firebase Auth user ${userId} deleted`);
+        } catch (authError) {
+            // User might already be deleted from Auth
+            if (authError.code !== 'auth/user-not-found') {
+                throw authError;
+            }
+            logger.info(`Firebase Auth user ${userId} not found (already deleted)`);
         }
-        console.log(`Firebase Auth user ${userId} not found (already deleted)`);
-    }
 
-    // 10. Delete user files from Storage
-    try {
-        const bucket = admin.storage().bucket();
-        await bucket.deleteFiles({
-            prefix: `users/${userId}/`
-        });
-        console.log(`Storage files for ${userId} deleted`);
-    } catch (storageError) {
-        // Storage might not have any files for this user
-        console.log(`No storage files found for ${userId} or error:`, storageError.message);
-    }
+        // 10. Delete user files from Storage
+        try {
+            const {getStorage} = require("firebase-admin/storage");
+            const storage = getStorage();
+            const bucket = storage.bucket();
+            await bucket.deleteFiles({
+                prefix: `users/${userId}/`
+            });
+            logger.info(`Storage files for ${userId} deleted`);
+        } catch (storageError) {
+            // Storage might not have any files for this user
+            logger.info(`No storage files found for ${userId} or error:`, storageError.message);
+        }
 }
 
 /**
  * Cancel account deletion (user changed their mind)
  * Called when user logs back in during grace period
  */
-exports.cancelAccountDeletion = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+exports.cancelAccountDeletion = onCall(async (request) => {
+    if (!request.auth) {
+        throw new Error('unauthenticated: Must be logged in');
     }
 
     const userId = context.auth.uid;
@@ -220,15 +232,15 @@ exports.cancelAccountDeletion = functions.https.onCall(async (data, context) => 
             markedForDeletion: false,
             deletionScheduledFor: admin.firestore.FieldValue.delete(),
             deletionMarkedAt: admin.firestore.FieldValue.delete(),
-            deletionCancelledAt: admin.firestore.FieldValue.serverTimestamp()
+            deletionCancelledAt: Timestamp.now()
         });
 
-        console.log(`Account deletion cancelled for user: ${userId}`);
+        logger.info(`Account deletion cancelled for user: ${userId}`);
         return { success: true, message: 'Account deletion cancelled successfully' };
 
     } catch (error) {
-        console.error('Error cancelling deletion:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to cancel deletion');
+        logger.error('Error cancelling deletion:', error);
+        throw new Error('internal: Failed to cancel deletion');
     }
 });
 
@@ -236,26 +248,23 @@ exports.cancelAccountDeletion = functions.https.onCall(async (data, context) => 
  * Immediate account deletion (for users who want instant deletion)
  * Bypasses grace period - use with caution
  */
-exports.deleteAccountImmediately = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+exports.deleteAccountImmediately = onCall(async (request) => {
+    if (!request.auth) {
+        throw new Error('unauthenticated: Must be logged in');
     }
 
-    const userId = context.auth.uid;
-    const { confirmationCode } = data;
+    const userId = request.auth.uid;
+    const { confirmationCode } = request.data;
 
     // Require confirmation code to prevent accidental deletion
     if (confirmationCode !== 'DELETE_MY_ACCOUNT_PERMANENTLY') {
-        throw new functions.https.HttpsError(
-            'invalid-argument',
-            'Invalid confirmation code'
-        );
+        throw new Error('invalid-argument: Invalid confirmation code');
     }
 
     try {
         const userDoc = await db.collection('users').doc(userId).get();
         if (!userDoc.exists) {
-            throw new functions.https.HttpsError('not-found', 'User not found');
+            throw new Error('not-found: User not found');
         }
 
         await deleteUserAccount(userId, userDoc.data());
@@ -263,25 +272,26 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         return { success: true, message: 'Account permanently deleted' };
 
     } catch (error) {
-        console.error('Error in immediate deletion:', error);
-        throw new functions.https.HttpsError('internal', 'Failed to delete account');
+        logger.error('Error in immediate deletion:', error);
+        throw new Error('internal: Failed to delete account');
     }
 });
 
 /**
  * Assigns a sweepfeed.app email address to a user when they upgrade to premium.
  */
-exports.assignPremiumEmail = functions.firestore.document('users/{userId}')
-    .onUpdate(async (change, context) => {
-        const userId = context.params.userId;
-        const beforeData = change.before.data();
-        const afterData = change.after.data();
+exports.assignPremiumEmail = onDocumentUpdated(
+    'users/{userId}',
+    async (event) => {
+        const userId = event.params.userId;
+        const beforeData = event.data.before.data();
+        const afterData = event.data.after.data();
 
         // Check if the user upgraded to premium
         if (beforeData.subscriptionTier !== 'premium' && afterData.subscriptionTier === 'premium') {
             // Check if the user already has a sweepfeed email
             if (afterData.sweepFeedEmail) {
-                console.log(`User ${userId} already has a sweepfeed email: ${afterData.sweepFeedEmail}`);
+                logger.info(`User ${userId} already has a sweepfeed email: ${afterData.sweepFeedEmail}`);
                 return null;
             }
 
@@ -294,9 +304,10 @@ exports.assignPremiumEmail = functions.firestore.document('users/{userId}')
                 sweepFeedEmail: email
             });
 
-            console.log(`Assigned sweepfeed email ${email} to user ${userId}`);
+            logger.info(`Assigned sweepfeed email ${email} to user ${userId}`);
             return null;
         }
 
         return null;
-    });
+    }
+);

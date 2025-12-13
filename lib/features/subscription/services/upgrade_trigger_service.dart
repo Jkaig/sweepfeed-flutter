@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/providers/providers.dart';
 import '../models/subscription_tiers.dart';
-import 'tier_management_service.dart';
+
 
 /// Service for managing smart upgrade triggers and retention optimization
 class UpgradeTriggerService with ChangeNotifier {

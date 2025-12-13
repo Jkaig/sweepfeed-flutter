@@ -10,11 +10,7 @@ class LevelProgressBar extends StatelessWidget {
   final String rank;
 
   const LevelProgressBar({
-    super.key,
-    required this.currentLevel,
-    required this.currentDB,
-    required this.dbToNextLevel,
-    required this.rank,
+    required this.currentLevel, required this.currentDB, required this.dbToNextLevel, required this.rank, super.key,
   });
 
   @override
@@ -102,14 +98,11 @@ class LevelProgressBar extends StatelessWidget {
                           AppColors.brandCyan,
                           AppColors.electricBlue,
                         ],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
                       ),
                       boxShadow: [
                         BoxShadow(
                           color: AppColors.brandCyan.withOpacity(0.4),
                           blurRadius: 6,
-                          spreadRadius: 0,
                         ),
                       ],
                     ),

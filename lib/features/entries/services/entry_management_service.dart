@@ -1,13 +1,14 @@
 import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:sweepfeed/core/services/dust_bunnies_service.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/models/entry_model.dart';
 import '../../../core/models/sweepstake.dart';
+import '../../../core/services/dust_bunnies_service.dart';
 import '../../../core/utils/logger.dart';
 import '../../challenges/models/daily_challenge_model.dart';
 import '../../challenges/services/daily_challenge_service.dart';
@@ -285,7 +286,7 @@ class EntryManagementService {
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
-          .map((doc) => (doc.data() as Map<String, dynamic>)['contestId'] as String)
+          .map((doc) => (doc.data()! as Map<String, dynamic>)['contestId'] as String)
           .toSet();
     });
   }

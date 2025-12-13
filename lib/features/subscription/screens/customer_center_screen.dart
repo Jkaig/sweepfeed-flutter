@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
-import 'package:sweepfeed/features/subscription/screens/premium_subscription_screen.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/logger.dart';
+import 'premium_subscription_screen.dart';
 
 /// Customer Center screen using RevenueCat's built-in customer center UI
 /// 

@@ -6,7 +6,6 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/animated_gradient_background.dart';
 import '../../../core/widgets/custom_back_button.dart';
-import '../../../core/widgets/glassmorphic_container.dart';
 import '../../../core/widgets/glass_settings_tile.dart';
 import '../../notifications/screens/notification_preferences_screen.dart';
 import 'about_screen.dart';

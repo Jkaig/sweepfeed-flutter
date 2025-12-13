@@ -68,42 +68,7 @@ class _ModernNotificationSettingsScreenState
     }
   }
 
-  Future<void> _updateConsent(
-    ModernNotificationCategory category,
-    bool enabled,
-  ) async {
-    if (_userId == null) return;
 
-    try {
-      await modernNotificationService.updateConsent(
-        _userId!,
-        category,
-        enabled,
-      );
-      setState(() {
-        _consents[category] = enabled;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            enabled
-                ? '${_getCategoryDisplayName(category)} notifications enabled'
-                : '${_getCategoryDisplayName(category)} notifications disabled',
-          ),
-          backgroundColor: enabled ? Colors.green : Colors.orange,
-        ),
-      );
-    } catch (e) {
-      logger.e('Error updating consent for $category', error: e);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to update notification settings'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
 
   Future<void> _requestPermissions() async {
     try {

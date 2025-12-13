@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/repositories/contest_repository.dart';
 import '../models/contest.dart';
 import '../utils/logger.dart';
+import 'providers.dart';
 
 final contestRepositoryProvider =
     Provider<ContestRepository>((ref) => ContestRepository());

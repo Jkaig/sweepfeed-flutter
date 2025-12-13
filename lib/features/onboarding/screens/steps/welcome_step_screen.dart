@@ -44,8 +44,10 @@ class WelcomeStepScreen extends StatelessWidget {
           // Welcome title
           GlassmorphicContainer(
             borderRadius: 16,
-            blur: 10,
-            opacity: 0.1,
+            colors: [
+              Colors.white.withOpacity(0.1),
+              Colors.white.withOpacity(0.1),
+            ],
             child: Padding(
               padding: const EdgeInsets.all(24.0),
               child: Column(
@@ -96,7 +98,6 @@ class WelcomeStepScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: Colors.white.withValues(alpha: 0.1),
-                width: 1,
               ),
             ),
             child: Row(

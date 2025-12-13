@@ -18,6 +18,7 @@ class UserProfile {
     this.points = 0,
     this.streak = 0,
     this.level = 1,
+    this.rank = 'Bronze',
     this.experience = 0,
     this.claimedRewards = const [],
     this.premiumUntil,
@@ -59,6 +60,7 @@ class UserProfile {
       points: (data['points'] as num?)?.toInt() ?? 0,
       streak: (data['streak'] as num?)?.toInt() ?? 0,
       level: (data['level'] as num?)?.toInt() ?? 1,
+      rank: data['rank'] as String? ?? 'Bronze',
       experience: (data['experience'] as num?)?.toInt() ?? 0,
       claimedRewards: (data['claimedRewards'] is List)
           ? List<String>.from(data['claimedRewards'])
@@ -106,8 +108,10 @@ class UserProfile {
   final int points;
   final int streak;
   final int level;
+  final String rank;
+  String get rankTitle => rank;
   final int experience;
-      final List<String> claimedRewards;
+  final List<String> claimedRewards;
       final Timestamp? premiumUntil;  final List<String> negativePreferences;
   final List<String> unlockedBadgeIds;
   final bool onboardingCompleted;
@@ -140,6 +144,7 @@ class UserProfile {
         'points': points,
         'streak': streak,
         'level': level,
+        'rank': rank,
         'experience': experience,
         'claimedRewards': claimedRewards,
         'premiumUntil': premiumUntil,
@@ -175,6 +180,7 @@ class UserProfile {
     int? points,
     int? streak,
     int? level,
+    String? rank,
     int? experience,
     List<String>? claimedRewards,
     Timestamp? premiumUntil,
@@ -210,6 +216,7 @@ class UserProfile {
         points: points ?? this.points,
         streak: streak ?? this.streak,
         level: level ?? this.level,
+        rank: rank ?? this.rank,
         experience: experience ?? this.experience,
         claimedRewards: claimedRewards ?? this.claimedRewards,
         premiumUntil: premiumUntil ?? this.premiumUntil,

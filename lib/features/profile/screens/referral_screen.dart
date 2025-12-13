@@ -226,14 +226,14 @@ class _ReferralScreenState extends State<ReferralScreen> {
                   color: AppColors.brandCyan.withValues(alpha: 0.3),
                 ),
               ),
-              child: const Column(
+              child: Column(
                 children: [
                   Image.asset(
                     'assets/images/dustbunnies/dustbunny_excited.png',
                     height: 100,
                   ),
-                  SizedBox(height: 16),
-                  Text(
+                  const SizedBox(height: 16),
+                  const Text(
                     'Invite Friends, Earn Rewards!',
                     style: TextStyle(
                       fontSize: 24,
@@ -242,8 +242,8 @@ class _ReferralScreenState extends State<ReferralScreen> {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  SizedBox(height: 8),
-                  Text(
+                  const SizedBox(height: 8),
+                  const Text(
                     'Share your unique referral code with friends. When they sign up using your code, both you and your friend get bonus Dustbunnies!',
                     style: TextStyle(fontSize: 16, color: AppColors.textLight),
                     textAlign: TextAlign.center,

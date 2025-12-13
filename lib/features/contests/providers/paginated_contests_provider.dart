@@ -19,10 +19,8 @@ final paginatedContestProvider = StateNotifierProvider.family<
 class PaginatedContestNotifier
     extends StateNotifier<PagingState<DocumentSnapshot?, Contest>> {
   PaginatedContestNotifier(this._repository, this._queryParams, this._ref)
-      : super(PagingState<DocumentSnapshot?, Contest>(
+      : super(const PagingState<DocumentSnapshot?, Contest>(
           itemList: [],
-          nextPageKey: null,
-          error: null,
         )) {
     _pagingController.addPageRequestListener((pageKey) {
       _fetchPage(pageKey);

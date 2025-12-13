@@ -15,6 +15,7 @@ class AppColors {
       Color(0xFF64FFDA); // Website accent - main brand color
   static const brandCyanDark = Color(0xFF4DCFB5); // Darker shade for gradients
   static const brandGold = Color(0xFFFFD700); // Gold color for premium features
+  static const brandPurple = Color(0xFF9D4EDD); // Vibrant purple
 
   // Action Colors - Distinct from brand cyan
   static const mangoTangoStart = Color(0xFFFF8A00); // True orange for energy

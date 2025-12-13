@@ -1,12 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../core/services/biometric_auth_service.dart';
 import '../../core/services/messaging_service.dart';
 import '../../core/services/referral_service.dart';
-
+import '../../core/services/streak_service.dart';
 import '../../features/auth/services/auth_service.dart';
+import '../../features/auth/services/enhanced_auth_service.dart';
 import '../../features/challenges/models/daily_challenge_model.dart';
 import '../../features/challenges/services/daily_challenge_service.dart';
 import '../../features/contests/models/advanced_filter_model.dart';
@@ -16,10 +20,9 @@ import '../../features/contests/services/contest_service.dart';
 import '../../features/contests/services/entry_service.dart';
 import '../../features/entries/services/entry_management_service.dart';
 import '../../features/gamification/models/badge_model.dart' as gamification_badge;
-import '../services/gamification_service.dart';
-import '../models/reward_model.dart';
 import '../../features/gamification/services/achievement_service.dart';
 import '../../features/gamification/services/reward_service.dart';
+import '../../features/main/services/main_screen_service.dart';
 import '../../features/mystery/services/mystery_box_service.dart';
 import '../../features/profile/services/profile_service.dart';
 import '../../features/reminders/services/live_activity_service.dart';
@@ -28,10 +31,12 @@ import '../../features/saved/services/saved_contests_service.dart';
 import '../../features/subscription/models/subscription_tiers.dart';
 import '../../features/subscription/services/revenue_cat_service.dart';
 import '../../features/subscription/services/subscription_service.dart';
+import '../../features/subscription/services/tier_management_service.dart';
 import '../models/category_model.dart';
 import '../models/charity_model.dart';
 import '../models/contest.dart';
 import '../models/filter_set_model.dart';
+import '../models/reward_model.dart';
 import '../models/settings_model.dart';
 import '../models/user_model.dart';
 import '../notifiers/app_settings_notifier.dart';
@@ -39,20 +44,18 @@ import '../services/ai_greeting_service.dart';
 import '../services/analytics_service.dart';
 import '../services/charity_service.dart';
 import '../services/dust_bunnies_service.dart';
+import '../services/feature_unlock_service.dart';
 import '../services/firebase_service.dart';
 import '../services/friend_service.dart';
+import '../services/gamification_service.dart';
 import '../services/notification_service.dart';
 import '../services/permission_manager.dart';
 import '../services/personalization_engine.dart';
 import '../services/unified_notification_service.dart';
 import '../services/user_preferences_service.dart';
 import '../services/user_service.dart';
-import '../services/feature_unlock_service.dart';
 import '../utils/logger.dart';
 import 'contest_providers.dart';
-
-
-import '../../core/services/streak_service.dart';
 
 /// Provides an instance of Firebase Authentication.
 final firebaseAuthProvider =
@@ -68,7 +71,21 @@ final sharedPreferencesProvider = FutureProvider<SharedPreferences>(
 );
 
 /// Provides an instance of the AuthService for user authentication.
-final authServiceProvider = Provider<AuthService>((ref) => AuthService());
+final authServiceProvider = Provider<AuthService>((ref) {
+  final authService = AuthService(ref);
+  ref.onDispose(() => authService.dispose());
+  return authService;
+});
+
+// Enhanced Auth Service Provider
+final enhancedAuthServiceProvider = Provider<EnhancedAuthService>((ref) {
+  return EnhancedAuthService();
+});
+
+// Biometric Auth Service Provider
+final biometricAuthServiceProvider = Provider<BiometricAuthService>((ref) {
+  return BiometricAuthService();
+});
 
 /// Provides an instance of the StreakService.
 final streakServiceProvider = ChangeNotifierProvider<StreakService>((ref) {
@@ -277,6 +294,21 @@ final analyticsServiceProvider = Provider<AnalyticsService>((ref) => FirebaseAna
 
 final userPreferencesServiceProvider =
     Provider<UserPreferencesService>((ref) => UserPreferencesService());
+
+// Main Screen Service Provider
+final mainScreenServiceProvider = Provider<MainScreenService>((ref) {
+  return MainScreenService(ref);
+});
+
+// Tier Management Service Provider  
+final tierManagementServiceProvider = Provider<TierManagementService>((ref) {
+  return TierManagementService(ref);
+});
+
+// Firebase Messaging Provider
+final firebaseMessagingProvider = Provider<FirebaseMessaging>((ref) {
+  return FirebaseMessaging.instance;
+});
 
 final personalizationEngineProvider =
     Provider<PersonalizationEngine>((ref) => PersonalizationEngine());
@@ -679,4 +711,3 @@ final dailyReminderUnlockProvider = StreamProvider<bool>((ref) {
   final unlockService = ref.watch(featureUnlockServiceProvider);
   return unlockService.watchFeatureUnlock('tool_daily_reminder');
 });
-```

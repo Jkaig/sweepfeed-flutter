@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:sweepfeed/features/profile/screens/public_profile_screen.dart';
+import '../../profile/screens/public_profile_screen.dart';
 import '../models/user_profile.dart';
 
 class FriendRequestCard extends StatefulWidget {

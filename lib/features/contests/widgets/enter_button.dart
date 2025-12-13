@@ -6,7 +6,6 @@ import '../../../core/models/contest.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../subscription/services/tier_management_service.dart';
 
 class EnterButton extends ConsumerWidget {
   const EnterButton({

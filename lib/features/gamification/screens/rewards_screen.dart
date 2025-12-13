@@ -1,17 +1,15 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/providers.dart';
 import '../../../core/models/reward_model.dart';
-import '../../../core/services/dust_bunnies_service.dart';
+import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/confetti_overlay.dart';
 import '../../../core/widgets/custom_app_bar.dart';
 import '../../../core/widgets/custom_back_button.dart';
 import '../../../core/widgets/loading_indicator.dart';
-import '../../../core/widgets/confetti_overlay.dart';
 
 class RewardsScreen extends ConsumerWidget {
   const RewardsScreen({super.key});
@@ -27,7 +25,6 @@ class RewardsScreen extends ConsumerWidget {
       appBar: const CustomAppBar(
         title: 'Rewards Store',
         leading: CustomBackButton(),
-        backgroundColor: Colors.transparent,
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -77,7 +74,7 @@ class RewardsScreen extends ConsumerWidget {
                          delegate: SliverChildBuilderDelegate(
                            (context, index) {
                              final reward = rewards[index];
-                             final isUnlocked = user.claimedRewards?.contains(reward.id) ?? false;
+                             final isUnlocked = user.claimedRewards.contains(reward.id) ?? false;
                              final canAfford = userPoints >= reward.points;
                              
                              return _HolographicRewardCard(

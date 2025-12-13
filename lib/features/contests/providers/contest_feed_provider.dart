@@ -17,13 +17,19 @@ final userInterestsProvider = Provider<List<String>>((ref) {
 /// Provider to toggle interest-based personalization on/off
 final personalizedFeedEnabledProvider = StateProvider<bool>((ref) => true);
 
+/// DEPRECATED: Use optimizedContestFeedProvider instead
+/// This provider loads 50 contests and filters client-side - inefficient for large datasets
+@Deprecated('Use optimizedContestFeedProvider for better performance with large datasets')
 final baseContestFeedProvider = FutureProvider<List<Contest>>((ref) async {
   try {
+    // OPTIMIZED: Always use limit and proper filtering
     final snapshot = await FirebaseFirestore.instance
         .collection('contests')
-        .where('isActive', isEqualTo: true)
+        .where('status', isEqualTo: 'active')
+        .where('endDate', isGreaterThan: Timestamp.now())
+        .orderBy('endDate', descending: false) // Use indexed field
         .orderBy('createdAt', descending: true)
-        .limit(50)
+        .limit(20) // Reduced from 50 for better performance
         .get();
 
     return snapshot.docs
@@ -34,6 +40,8 @@ final baseContestFeedProvider = FutureProvider<List<Contest>>((ref) async {
   }
 });
 
+/// DEPRECATED: Use optimizedContestFeedProvider instead
+@Deprecated('Use optimizedContestFeedProvider for pagination and server-side filtering')
 final contestFeedProvider = FutureProvider<List<Contest>>((ref) async {
   final contests = await ref.watch(baseContestFeedProvider.future);
   final activeFilter = ref.watch(activeContestFilterProvider);

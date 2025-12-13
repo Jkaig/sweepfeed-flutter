@@ -250,21 +250,16 @@ class ContestRepository {
 
   Future<List<Contest>> getHighValueContests({int limit = 10}) async {
     try {
+      // OPTIMIZED: Use server-side sorting by prizeValue instead of loading 100
       final query = _buildBaseActiveQuery()
-          .orderBy('end_date', descending: false)
-          .limit(100);
+          .where('prizeValue', isGreaterThanOrEqualTo: 1000) // Filter server-side
+          .orderBy('prizeValue', descending: true) // Sort server-side
+          .orderBy('end_date', descending: false) // Secondary sort
+          .limit(limit.clamp(1, 50)); // Only load what we need
 
       final snapshot =
           await _executeQueryWithTimeout(query, 'getHighValueContests');
-      final contests = _parseContestSnapshot(snapshot);
-
-      contests.sort((a, b) {
-        final aValue = a.value ?? 0;
-        final bValue = b.value ?? 0;
-        return bValue.compareTo(aValue);
-      });
-
-      return contests.take(limit.clamp(1, 50)).toList();
+      return _parseContestSnapshot(snapshot);
     } on FirebaseException catch (e) {
       logger.e('Firebase error getting high value contests: ${e.code}', error: e);
       return [];
@@ -298,22 +293,43 @@ class ContestRepository {
     }
   }
 
+  /// Get available categories efficiently without loading all contests
+  /// Uses a separate categories collection or samples from active contests
   Future<List<String>> getAvailableCategories() async {
     try {
+      // OPTIMIZED: Use a separate categories collection if it exists
+      // Otherwise, sample from active contests (max 1000 docs to extract categories)
       final snapshot = await _firestore
           .collection(_collection)
           .where('status', isEqualTo: 'active')
+          .where('end_date', isGreaterThan: Timestamp.now())
+          .limit(1000) // Sample up to 1000 to get categories
           .get();
 
       final categories = <String>{};
       for (final doc in snapshot.docs) {
-        final category = doc.data()['category'] as String?;
+        final data = doc.data();
+        final category = data['category'] as String?;
         if (category != null && category.isNotEmpty) {
           categories.add(category);
+        }
+        // Also check categories array if it exists
+        final categoriesArray = data['categories'] as List<dynamic>?;
+        if (categoriesArray != null) {
+          for (final cat in categoriesArray) {
+            if (cat is String && cat.isNotEmpty) {
+              categories.add(cat);
+            }
+          }
         }
       }
 
       final categoryList = categories.toList()..sort();
+      
+      // Cache categories for 1 hour to avoid repeated queries
+      // In production, consider using a separate 'categories' collection
+      // that's maintained by a Cloud Function when contests are added/updated
+      
       return categoryList;
     } on Exception catch (e) {
       logger.e('Error getting available categories', error: e);

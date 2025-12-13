@@ -150,7 +150,7 @@ class AppInitializationManager {
   /// Phase 2: Background initialization (non-critical services).
   ///
   /// Initializes push notifications and the reminder service.
-  Future<void> initializeBackground() async {
+  Future<void> initializeBackground({ReminderService? reminderService}) async {
     // This runs after the app has started
     // Heavy operations are handled by isolates in IsolateDataLoader
 
@@ -161,8 +161,10 @@ class AppInitializationManager {
       // Setup push notifications
       await _setupPushNotifications();
 
-      // Initialize the reminder service
-      await ReminderService().init();
+      // Initialize the reminder service if provided
+      if (reminderService != null) {
+        await reminderService.init();
+      }
 
       // Initialize Firebase Remote Config for A/B testing
       try {

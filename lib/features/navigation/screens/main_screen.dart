@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../auth/services/auth_service.dart';
-import '../../features/ads/widgets/admob_banner.dart';
-import '../../features/gamification/screens/daily_check_in_screen.dart';
-import '../../features/subscription/widgets/active_trial_banner.dart';
-import '../../features/subscription/widgets/trial_banner.dart';
-import '../../core/providers/providers.dart';
+import '../../../core/providers/providers.dart';
+import '../../ads/widgets/admob_banner.dart';
+import '../../gamification/screens/daily_check_in_screen.dart';
+import '../../subscription/widgets/active_trial_banner.dart';
+import '../../subscription/widgets/trial_banner.dart';
 import 'main_navigation_wrapper.dart';
 
 class MainScreen extends ConsumerStatefulWidget {
@@ -17,7 +16,6 @@ class MainScreen extends ConsumerStatefulWidget {
 }
 
 class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObserver {
-  final AuthService _authService = AuthService();
 
   @override
   void initState() {

@@ -4,8 +4,8 @@ import 'package:timezone/data/latest.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/models/contest.dart';
+import '../../../core/services/feature_unlock_service.dart';
 import '../../../core/utils/logger.dart';
-import '../../core/services/feature_unlock_service.dart';
 
 /// A service to handle scheduling and managing local notifications for reminders.
 class ReminderService {
@@ -217,15 +217,15 @@ class ReminderService {
         if (!isUnlocked) {
            // Default to 9:00 AM if locked, regardless of what's in prefs
            // Note: We don't overwrite prefs here to preserve user intent for when they unlock
-           timeString = "09:00"; 
+           timeString = '09:00'; 
            logger.i('Daily Reminder locked: Enforcing default time 09:00');
         } else {
            // If unlocked, ensure we have a time, default to 9:00 if null
-           timeString ??= "09:00";
+           timeString ??= '09:00';
         }
       
         // Validate time format
-        if (!_isValidTimeFormat(timeString!)) {
+        if (!_isValidTimeFormat(timeString)) {
           logger.e('Invalid time format: $timeString');
           return;
         }

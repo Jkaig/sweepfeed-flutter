@@ -8,7 +8,6 @@ import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/primary_button.dart';
-import '../../entries/services/entry_management_service.dart';
 import '../../contests/providers/contest_feed_provider.dart';
 
 class ReturnUserDialog extends ConsumerWidget {

@@ -1,6 +1,10 @@
-const admin = require('firebase-admin');
-const db = admin.firestore();
-const fcm = admin.messaging();
+const {initializeApp} = require("firebase-admin/app");
+const {getFirestore} = require("firebase-admin/firestore");
+const {getMessaging} = require("firebase-admin/messaging");
+
+initializeApp();
+const db = getFirestore();
+const fcm = getMessaging();
 
 /**
  * Sends a push notification to a user.

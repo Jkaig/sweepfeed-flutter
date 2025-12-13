@@ -80,7 +80,7 @@ class _NotificationPermissionStepScreenState
               // Let's decide to proceed if they cancel.
               widget.onNext(); 
             },
-            child: Text(
+            child: const Text(
               'Skip',
               style: TextStyle(color: AppColors.textMuted),
             ),
@@ -127,9 +127,7 @@ class _NotificationPermissionStepScreenState
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 48),
-          _isLoading
-              ? const CircularProgressIndicator(color: AppColors.brandCyan)
-              : OnboardingButton(
+          if (_isLoading) const CircularProgressIndicator(color: AppColors.brandCyan) else OnboardingButton(
                   text: 'Enable Notifications',
                   onPressed: _handlePermissionRequest,
                 ),

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../auth/services/auth_service.dart';
 import '../services/admin_service.dart';
 import 'support_ticket_list_screen.dart';
 import 'user_management_screen.dart';
@@ -11,10 +11,8 @@ import 'winner_claims_screen.dart';
 
 // Provider to check if current user is admin
 final isAdminProvider = FutureProvider<bool>((ref) async {
-  // We need to instantiate AuthService directly or via provider if available
-  // Assuming a simple direct instantiation for now based on AuthService code
-  final authService = AuthService();
-  return authService.isUserAdmin();
+  final adminService = AdminService();
+  return adminService.isUserAdmin();
 });
 
 class AdminDashboardScreen extends ConsumerStatefulWidget {
@@ -38,7 +36,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
   }
 
   Future<void> _loadPermissions() async {
-    final user = AuthService().currentUser;
+    final authService = ref.read(authServiceProvider);
+    final user = authService.currentUser;
     if (user == null) {
       setState(() => _isLoading = false);
       return;

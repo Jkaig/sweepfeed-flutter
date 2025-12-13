@@ -5,50 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-
-class CharityImpactCard extends StatefulWidget {
-  const CharityImpactCard({
-    required this.charityId,
-    required this.donationAmount,
-    required this.pointsEarned,
-    super.key,
-  });
-  final String charityId;
-  final double donationAmount;
-  final int pointsEarned;
-
-  @override
-  State<CharityImpactCard> createState() => _CharityImpactCardState();
-}
-
-class _CharityImpactCardState extends State<CharityImpactCard> {
-  late ConfettiController _confettiController;
-  String charityName = '';
-  double communityTotal = 0.0;
-  int userRank = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _confettiController =
-        ConfettiController(duration: const Duration(seconds: 2));
-    _confettiController.play();
-    _loadData();
-  }
-
-  @override
-  void dispose() {
-    _confettiController.dispose();
-    super.dispose();
-  }
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:confetti/confetti.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-
-import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/logger.dart';
 
 class CharityImpactCard extends StatefulWidget {

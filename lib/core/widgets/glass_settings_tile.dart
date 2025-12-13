@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
-import '../../theme/app_colors.dart';
-import '../../theme/app_text_styles.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_text_styles.dart';
 import 'glassmorphic_container.dart';
 
 class GlassSettingsTile extends StatelessWidget {
   const GlassSettingsTile({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
+    required this.icon, required this.title, required this.subtitle, super.key,
     this.onTap,
     this.trailing,
     this.showChevron = true,

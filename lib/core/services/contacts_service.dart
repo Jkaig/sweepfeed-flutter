@@ -54,7 +54,7 @@ class AppContactsService {
   Future<List<Contact>> getContactsWithPermission() async {
     final status = await requestPermission();
     if (status.isGranted) {
-      return await getContacts();
+      return getContacts();
     }
     return [];
   }

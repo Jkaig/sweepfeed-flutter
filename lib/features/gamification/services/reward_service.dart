@@ -2,13 +2,13 @@ import '../../../core/models/reward_model.dart';
 
 class RewardService {
   static final List<Reward> allRewards = [
-    Reward(
+    const Reward(
       id: 'extra_entries_1',
       name: '5 Extra Daily Entries',
       description: 'Get 5 bonus entries every day.',
       points: 500,
     ),
-    Reward(
+    const Reward(
       id: 'power_user_badge',
       name: 'Power User Badge',
       description: 'Show off your status with a special profile badge.',

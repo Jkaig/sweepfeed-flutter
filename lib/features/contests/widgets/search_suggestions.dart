@@ -6,9 +6,7 @@ import '../providers/search_suggestion_provider.dart';
 
 class SearchSuggestions extends ConsumerWidget {
   const SearchSuggestions({
-    super.key,
-    required this.query,
-    required this.onSuggestionSelected,
+    required this.query, required this.onSuggestionSelected, super.key,
   });
 
   final String query;

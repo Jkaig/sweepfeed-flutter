@@ -1,12 +1,18 @@
-const functions = require("firebase-functions");
-const admin = require("firebase-admin");
+const {onSchedule} = require("firebase-functions/v2/scheduler");
+const {logger} = require("firebase-functions/v2");
+const {initializeApp} = require("firebase-admin/app");
+const {getFirestore, Timestamp} = require("firebase-admin/firestore");
+
+initializeApp();
+const db = getFirestore();
 
 // Process monthly leaderboard - runs on the 1st of each month
-exports.processMonthlyLeaderboard = functions.pubsub
-  .schedule("0 0 1 * *")
-  .timeZone("UTC")
-  .onRun(async (context) => {
-    const db = admin.firestore();
+exports.processMonthlyLeaderboard = onSchedule(
+  {
+    schedule: "0 0 1 * *",
+    timeZone: "UTC",
+  },
+  async (event) => {
 
     try {
       const now = new Date();
@@ -41,7 +47,7 @@ exports.processMonthlyLeaderboard = functions.pubsub
       const leaderboardRef = db.collection("leaderboards").doc(monthKey);
       batch.set(leaderboardRef, {
         month: monthKey,
-        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        processedAt: Timestamp.now(),
         topUsers: leaderboardData,
       });
 
@@ -52,15 +58,16 @@ exports.processMonthlyLeaderboard = functions.pubsub
         batch.update(doc.ref, {
           "dustBunniesSystem.monthlyEarned": 0,
           monthlyEntries: 0, // Reset legacy field too
-          lastMonthlyReset: admin.firestore.FieldValue.serverTimestamp(),
+          lastMonthlyReset: Timestamp.now(),
         });
       });
 
       await batch.commit();
-      console.log(`Monthly leaderboard processed for ${monthKey}`);
+      logger.info(`Monthly leaderboard processed for ${monthKey}`);
       return null;
     } catch (error) {
-      console.error("Error processing monthly leaderboard:", error);
+      logger.error("Error processing monthly leaderboard:", error);
       throw error;
     }
-  });
+  }
+);

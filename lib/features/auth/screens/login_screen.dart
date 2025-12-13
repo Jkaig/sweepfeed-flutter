@@ -1,8 +1,10 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_text_styles.dart';
@@ -10,23 +12,20 @@ import '../../../core/widgets/custom_text_field.dart';
 import '../../../core/widgets/error_display.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/social_sign_in_button.dart';
-// Removed non-existent import
-import '../services/auth_service.dart';
 
-class LoginScreen extends StatefulWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
   DateTime? _dob;
-  final AuthService _authService = AuthService();
 
   bool _isLoading = false;
   bool _showEmailForm = false;
@@ -41,7 +40,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkBiometrics() async {
-    final isAvailable = await _authService.isBiometricAvailable();
+    final biometricService = ref.read(biometricAuthServiceProvider);
+    final isAvailable = await biometricService.canUseBiometrics();
     if (mounted) {
       setState(() {
         _biometricsAvailable = isAvailable;
@@ -73,6 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendSignInLinkToEmail() async {
+    final enhancedAuth = ref.read(enhancedAuthServiceProvider);
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -94,7 +95,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
     try {
-      await _authService.sendSignInLinkToEmail(
+      await enhancedAuth.sendSecureMagicLink(
         _emailController.text.trim(),
         context,
       );
@@ -134,7 +135,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
     try {
-      await _authService.verifyPhoneNumber(
+      final enhancedAuth = ref.read(enhancedAuthServiceProvider);
+      await enhancedAuth.sendSecureOTP(
         _phoneController.text.trim(),
         context,
       );
@@ -154,7 +156,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleGoogleSignIn() async {
     setState(() => _isLoading = true);
     try {
-      await _authService.signInWithGoogle(context);
+      final enhancedAuth = ref.read(enhancedAuthServiceProvider);
+      await enhancedAuth.signInWithGoogle();
       // Navigation handled by AuthWrapper/SplashScreen
     } catch (e) {
       if (mounted) {
@@ -175,7 +178,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleAppleSignIn() async {
     setState(() => _isLoading = true);
     try {
-      await _authService.signInWithApple(context);
+      final enhancedAuth = ref.read(enhancedAuthServiceProvider);
+      await enhancedAuth.signInWithApple();
       // Navigation handled by AuthWrapper/SplashScreen
     } catch (e) {
       if (mounted) {
@@ -196,7 +200,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleBiometricSignIn() async {
     setState(() => _isLoading = true);
     try {
-      final success = await _authService.signInWithBiometrics();
+      final biometricService = ref.read(biometricAuthServiceProvider);
+      final user = await biometricService.signInWithBiometrics();
+      final success = user != null;
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Biometric sign-in failed.')),

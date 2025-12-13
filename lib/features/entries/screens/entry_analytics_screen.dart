@@ -6,8 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../../core/widgets/glassmorphic_container.dart';
 import '../../../core/widgets/animated_gradient_background.dart';
+import '../../../core/widgets/glassmorphic_container.dart';
 import '../../social/screens/dust_bunnies_shop_screen.dart';
 
 class EntryAnalyticsScreen extends ConsumerStatefulWidget {
@@ -139,9 +139,9 @@ class _EntryAnalyticsScreenState extends ConsumerState<EntryAnalyticsScreen> {
                     LineChartData(
                       gridData: const FlGridData(show: false),
                       titlesData: const FlTitlesData(
-                        rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                        leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: AxisTitles(),
+                        topTitles: AxisTitles(),
+                        leftTitles: AxisTitles(),
                         bottomTitles: AxisTitles(
                           sideTitles: SideTitles(
                             showTitles: true,
@@ -291,7 +291,6 @@ Widget _bottomTitles(double value, TitleMeta meta) {
   }
   return SideTitleWidget(
     axisSide: meta.axisSide,
-    space: 8.0,
     child: Text(text, style: style),
   );
 }

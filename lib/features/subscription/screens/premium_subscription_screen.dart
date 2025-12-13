@@ -266,7 +266,7 @@ class _PremiumSubscriptionScreenState
             border: isSelected
                 ? Border.all(color: AppColors.accent, width: 2)
                 : Border.all(
-                    color: Colors.white.withValues(alpha: 0.1), width: 1,),
+                    color: Colors.white.withValues(alpha: 0.1),),
             child: Container(
               padding: const EdgeInsets.all(24),
               decoration: isSelected
@@ -398,8 +398,7 @@ class _PremiumSubscriptionScreenState
         color: Colors.transparent, // Let gradient show through (or blur)
       ),
       child: GlassmorphicContainer(
-        borderRadius: 20,
-         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: PrimaryButton(

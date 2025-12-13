@@ -100,7 +100,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            const Icon(
               Icons.search_off,
               size: 64,
               color: AppColors.warningOrange,
@@ -122,7 +122,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
+            child: const Text(
               'Cancel',
               style: TextStyle(color: AppColors.textMuted),
             ),
@@ -135,7 +135,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.brandCyan,
             ),
-            child: Text(
+            child: const Text(
               'Go to Shop',
               style: TextStyle(color: AppColors.primaryDark),
             ),

@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/data/repositories/contest_repository.dart';
 import '../../../core/models/contest.dart';
 import '../../../core/services/firebase_service.dart';
+import '../../../core/services/user_preferences_service.dart';
 import '../../../core/utils/logger.dart';
 import '../models/filter_options.dart';
 
@@ -16,7 +17,7 @@ class ContestService {
   /// Constructs a [ContestService].
   ///
   /// Requires [firebaseService] for interacting with Firebase services and
-  /// [sweepstakeService] for managing sweepstakes related data.
+  /// [contestRepository] for managing contest related data.
   ContestService(
     this.firebaseService,
     this.contestRepository,
@@ -163,7 +164,7 @@ class ContestService {
         for (final doc in snapshot.docs) {
           try {
             final contestId = doc.id;
-            final contest = await this.getContestById(contestId);
+            final contest = await getContestById(contestId);
             if (contest != null) {
               contests.add(contest);
             }
@@ -247,7 +248,7 @@ class ContestService {
         for (final doc in snapshot) {
           try {
             final contestId = doc.id;
-            final contest = await this.getContestById(contestId);
+            final contest = await getContestById(contestId);
             if (contest != null) {
               contests.add(contest);
             }
@@ -341,7 +342,8 @@ class ContestService {
       final contest = await getContestById(contestId);
       if (contest != null) {
         // Track interest for personalization
-        await UserPreferencesService().trackContestEntry(
+        final userPrefsService = UserPreferencesService();
+        await userPrefsService.trackContestEntry(
           contestId,
           contest.category,
           contest.sponsor,
@@ -507,11 +509,15 @@ class ContestService {
         return [];
       }
 
+      // OPTIMIZED: Limit to reasonable number for text search
+      // Note: For production with large datasets, consider Algolia/Elasticsearch
       final queryLower = query.toLowerCase();
       final snapshot = await _firestore
           .collection('contests')
+          .where('status', isEqualTo: 'active')
           .where('endDate', isGreaterThan: Timestamp.now())
-          .limit(100) // Fetch more to filter locally
+          .orderBy('endDate', descending: false) // Use indexed field
+          .limit(50) // Reduced from 100 - fetch less, filter more efficiently
           .get()
           .timeout(
             const Duration(seconds: 30),

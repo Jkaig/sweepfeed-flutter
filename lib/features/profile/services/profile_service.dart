@@ -166,7 +166,10 @@ class ProfileService {
 
   Future<void> deleteUserAccount(AuthService authService) async {
     try {
-      await authService.deleteAccount();
+      final user = authService.currentUser;
+      if (user != null) {
+        await user.delete();
+      }
     } catch (e) {
       logger.e('Error deleting user account from ProfileService', error: e);
       rethrow;

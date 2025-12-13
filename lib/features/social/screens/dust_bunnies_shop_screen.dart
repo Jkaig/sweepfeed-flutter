@@ -1,8 +1,52 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/providers.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_text_styles.dart';
+import '../../../core/widgets/animated_gradient_background.dart';
+import '../../../core/widgets/glassmorphic_container.dart';
+import '../../social/models/dust_bunnies_shop.dart';
+import '../providers/dust_bunnies_provider.dart';
+import '../widgets/dust_bunnies_wallet_header.dart';
+import '../widgets/shop_item_card.dart';
+import 'inventory_screen.dart';
+import 'leaderboard_screen.dart';
 
-// ... existing imports
+class DustBunniesShopScreen extends ConsumerStatefulWidget {
+  const DustBunniesShopScreen({super.key});
+
+  @override
+  ConsumerState<DustBunniesShopScreen> createState() =>
+      _DustBunniesShopScreenState();
+}
+
+class _DustBunniesShopScreenState extends ConsumerState<DustBunniesShopScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  
+  // Grouped Categories
+  final List<String> _categories = ['Toolkit', 'Cosmetics'];
+  
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(dustBunniesShopProvider.notifier).fetchShopItems();
+      ref.read(dustBunniesWalletProvider.notifier).fetchWallet('current_user');
+      ref
+          .read(cosmeticInventoryProvider.notifier)
+          .fetchInventory('current_user');
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   Future<void> _handlePurchase(ShopItem item) async {
     final walletAsync = ref.read(dustBunniesWalletProvider);
@@ -41,7 +85,7 @@ import '../../../core/providers/providers.dart';
       if (item.type == ShopItemType.powerUp) {
         if (item.id == 'powerup_streak_freeze') {
            // Add freeze to user's streak data
-           await ref.read(streakServiceProvider).addFreeze(user.uid, amount: 1);
+           await ref.read(streakServiceProvider).addFreeze(user.uid);
         } else if (item.id == 'powerup_double_dust') {
            // Placeholder for double dust logic
            // In a real app, this would update a 'buffs' collection or field
@@ -113,113 +157,21 @@ import '../../../core/providers/providers.dart';
             ),
           ),
         );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Purchase failed: $e'),
-            backgroundColor: AppColors.errorRed,
-          ),
-        );
-      }
-    }
-  }
-import '../../../core/theme/app_text_styles.dart';
-import '../../../core/widgets/animated_gradient_background.dart';
-import '../../../core/widgets/glassmorphic_container.dart';
-import '../../social/models/dust_bunnies_shop.dart';
-import '../providers/dust_bunnies_provider.dart';
-import '../widgets/dust_bunnies_wallet_header.dart';
-import '../widgets/shop_item_card.dart';
-import 'inventory_screen.dart';
-import 'leaderboard_screen.dart';
-
-class DustBunniesShopScreen extends ConsumerStatefulWidget {
-  const DustBunniesShopScreen({super.key});
-
-  @override
-  ConsumerState<DustBunniesShopScreen> createState() =>
-      _DustBunniesShopScreenState();
-}
-
-class _DustBunniesShopScreenState extends ConsumerState<DustBunniesShopScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  
-  // Grouped Categories
-  final List<String> _categories = ['Toolkit', 'Cosmetics'];
-  
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(dustBunniesShopProvider.notifier).fetchShopItems();
-      ref.read(dustBunniesWalletProvider.notifier).fetchWallet('current_user');
-      ref
-          .read(cosmeticInventoryProvider.notifier)
-          .fetchInventory('current_user');
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handlePurchase(ShopItem item) async {
-    final walletAsync = ref.read(dustBunniesWalletProvider);
-    final wallet = walletAsync.valueOrNull;
-
-    if (wallet == null) return;
-
-    if (wallet.balance < item.price) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Not enough DustBunnies!'),
-          backgroundColor: AppColors.errorRed,
-        ),
-      );
-      return;
-    }
-
-    try {
-      // 1. Deduct DustBunnies
-      await ref.read(dustBunniesWalletProvider.notifier).spendCoins(
-            item.price,
-            'Purchased ${item.name}',
-            itemId: item.id,
+      } else if (item.type == ShopItemType.utility) {
+        // Unlock the feature
+        final unlockService = ref.read(featureUnlockServiceProvider);
+        await unlockService.unlockFeature(item.id);
+        
+        // Add to inventory
+        await ref.read(cosmeticInventoryProvider.notifier).addItem(item);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${item.name} unlocked! Feature is now available.'),
+              backgroundColor: AppColors.successGreen,
+            ),
           );
-
-      // 2. Process Purchase (Mock API call)
-      await ref.read(dustBunniesShopProvider.notifier).purchaseItem(
-            item.id,
-            wallet.balance,
-          );
-
-      // 3. Apply Effects
-      if (item.type == ShopItemType.powerUp) {
-        if (item.id == 'powerup_streak_freeze') {
-           // Add freeze to user's streak data
-           // We need to access a provider that exposes StreakService, or use the service directly.
-           // Assuming we can get the service from context/ref or it's a singleton/provider.
-           // Since streak_service.dart defines StreakService but not a provider... 
-           // Wait, MainScreen uses it.
-           // Let's assume there is a provider or we can access it.
-           // Ah, I don't see a 'streakServiceProvider' imported.
-           // I'll assume for now I should use a hypothetical provider or just log it if I can't find it.
-           // Actually, let's look at `lib/core/providers/providers.dart`.
-           // I will check providers.dart in a moment if needed, but for now let's try to find it.
-           // If not found, I will comment it out and fix it in next step.
-           // Wait, I imported streak_service.dart.
-           // I need `streakServiceProvider`.
-           
-           // I will assume `streakServiceProvider` exists in `core/providers/providers.dart` or similar.
-           // But I don't have that import in the original file. 
-           // I will add the import: `import '../../../core/providers/providers.dart';`
         }
       } else {
         // Add to inventory
@@ -353,7 +305,7 @@ class _DustBunniesShopScreenState extends ConsumerState<DustBunniesShopScreen>
                     indicator: BoxDecoration(
                       color: AppColors.brandCyan.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(25),
-                      border: Border.all(color: AppColors.brandCyan.withOpacity(0.5), width: 1),
+                      border: Border.all(color: AppColors.brandCyan.withOpacity(0.5)),
                     ),
                     indicatorSize: TabBarIndicatorSize.tab,
                     labelColor: AppColors.brandCyan,

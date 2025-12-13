@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sweepfeed/core/models/filter_set_model.dart';
+import '../../../core/models/filter_set_model.dart';
 
 import '../../../core/providers/providers.dart';
 

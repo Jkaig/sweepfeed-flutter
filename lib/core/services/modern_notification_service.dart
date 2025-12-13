@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:app_links/app_links.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:app_links/app_links.dart';
 
 import '../../features/reminders/services/reminder_service.dart';
 import '../utils/logger.dart';
@@ -655,8 +655,8 @@ class ModernNotificationService {
   /// Unified notification service.
   final UnifiedNotificationService _unifiedService = unifiedNotificationService;
 
-  /// Reminder service.
-  final ReminderService _reminderService = ReminderService();
+  /// Reminder service - will be initialized with provider when available.
+  ReminderService? _reminderService;
 
   /// Consent manager for handling user consent for notifications.
   final ConsentManager _consentManager = ConsentManager();
@@ -682,8 +682,10 @@ class ModernNotificationService {
       // Initialize local notifications with modern features
       await _initializeLocalNotifications();
 
-      // Initialize reminder service
-      await _reminderService.init();
+      // Initialize reminder service if available
+      if (_reminderService != null) {
+        await _reminderService!.init();
+      }
 
       // Setup deep link handling
       await _setupDeepLinkHandling();
@@ -914,18 +916,16 @@ class ModernNotificationService {
 
   /// Sets up deep link handling using the uni_links package.
   Future<void> _setupDeepLinkHandling() async {
-    final _appLinks = AppLinks();
+    final appLinks = AppLinks();
 
     try {
       // Listen for incoming links when app is already running
-      _appLinks.uriLinkStream.listen((uri) {
-        if (uri != null) {
-          _deepLinkManager.handleDeepLink(uri.toString());
-        }
-      });
+      appLinks.uriLinkStream.listen((uri) {
+        _deepLinkManager.handleDeepLink(uri.toString());
+            });
 
       // Handle link when app is launched
-      final initialUri = await _appLinks.getInitialAppLink();
+      final initialUri = await appLinks.getInitialLink();
       if (initialUri != null) {
         _deepLinkManager.handleDeepLink(initialUri.toString());
       }
@@ -1265,6 +1265,8 @@ class ModernNotificationService {
         return 'Game Updates';
       case ModernNotificationCategory.achievements:
         return 'Achievements';
+      case ModernNotificationCategory.hotSweepstakes:
+        return 'Hot Sweepstakes';
     }
   }
 
@@ -1287,6 +1289,8 @@ class ModernNotificationService {
         return 'New features and game-related updates';
       case ModernNotificationCategory.achievements:
         return 'Badges, levels, and milestone notifications';
+      case ModernNotificationCategory.hotSweepstakes:
+        return 'Hot trending sweepstakes and time-sensitive opportunities';
     }
   }
 

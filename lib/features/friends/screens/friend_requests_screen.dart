@@ -5,9 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/loading_indicator.dart';
+import '../../profile/widgets/profile_picture_avatar.dart';
 import '../../social/screens/contacts_screen.dart';
 import '../../social/screens/friends_screen.dart';
-import '../../profile/widgets/profile_picture_avatar.dart';
 
 final friendRequestsProvider = StreamProvider<QuerySnapshot>(
     (ref) => ref.watch(friendServiceProvider).getFriendRequests(),);

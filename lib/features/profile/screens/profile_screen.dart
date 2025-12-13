@@ -1,34 +1,31 @@
-import 'dart:ui';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Badge;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../../core/models/user_model.dart';
 import '../../../core/providers/providers.dart';
-import '../../../core/services/gamification_service.dart';
+import '../../../core/services/dust_bunnies_service.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../../core/widgets/custom_app_bar.dart';
+
 import '../../../core/widgets/custom_back_button.dart';
 import '../../../core/widgets/loading_indicator.dart';
-import '../../entries/screens/entry_analytics_screen.dart';
 import '../../charity/screens/donation_history_screen.dart';
 import '../../email/screens/email_inbox_screen.dart';
 import '../../email/services/email_service.dart';
-import '../../gamification/screens/achievements_screen.dart';
-import '../../notifications/screens/notification_preferences_screen.dart';
-import '../../settings/screens/help_support_screen.dart';
-import '../../settings/screens/settings_screen.dart';
+import '../../entries/screens/entry_analytics_screen.dart';
+import '../../gamification/models/badge_model.dart';
+
 import '../../subscription/models/subscription_tiers.dart';
 import '../../subscription/screens/subscription_screen.dart';
-import '../../subscription/services/tier_management_service.dart';
+import '../widgets/level_progress_bar.dart';
 import '../widgets/profile_picture_avatar.dart';
 import 'profile_settings_screen.dart';
 import 'referral_screen.dart';
-import '../widgets/level_progress_bar.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -41,9 +38,9 @@ class ProfileScreen extends ConsumerWidget {
     final currentTier = tierManagement.getCurrentTier();
 
     if (currentUser == null) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: AppColors.primaryDark,
-        body: const Center(
+        body: Center(
           child: Text('Please log in.', style: AppTextStyles.bodyLarge),
         ),
       );
@@ -396,7 +393,6 @@ class _BentoStatsGrid extends ConsumerWidget {
             ),
             const SizedBox(width: 12),
             Expanded(
-              flex: 1,
               child: _BentoCard(
                 title: 'Streak',
                 value: '${user.streak}🔥',
@@ -434,13 +430,13 @@ class _BentoStatsGrid extends ConsumerWidget {
                   icon: Icons.leaderboard,
                   color: AppColors.brandCyan,
                 ),
-                loading: () => _BentoCard(
+                loading: () => const _BentoCard(
                   title: 'Rank',
                   value: '...',
                   icon: Icons.leaderboard,
                   color: AppColors.brandCyan,
                 ),
-                error: (_, __) => _BentoCard(
+                error: (_, __) => const _BentoCard(
                   title: 'Rank',
                   value: 'N/A',
                   icon: Icons.leaderboard,
@@ -465,8 +461,7 @@ class _BentoCard extends StatelessWidget {
   const _BentoCard({
     required this.title,
     required this.value,
-    this.icon,
-    required this.color,
+    required this.color, this.icon,
     this.imageUrl,
   });
 
@@ -553,7 +548,7 @@ class _BadgeCarousel extends ConsumerWidget {
            return const SizedBox(height: 100, child: Center(child: Text('No badges', style: TextStyle(color: Colors.white54))));
          }
 
-         final data = snapshot.data!.data() as Map<String, dynamic>;
+         final data = snapshot.data!.data()! as Map<String, dynamic>;
          final gamification = data['gamification'] as Map<String, dynamic>?;
          final badgesData = gamification?['badges'] as Map<String, dynamic>?;
          final collected = (badgesData?['collected'] as List?)?.cast<String>() ?? [];
@@ -584,14 +579,11 @@ class _BadgeCarousel extends ConsumerWidget {
                // Find badge meta
                final badge = allBadges.firstWhere(
                  (b) => b.id == badgeId, 
-                 orElse: () => Achievement(
+                 orElse: () => const Badge(
                    id: 'unknown', 
                    name: 'Unknown', 
                    description: '', 
                    icon: Icons.help_outline, 
-                   category: AchievementCategory.general,
-                   requirementType: AchievementRequirementType.manual,
-                   requirementValue: 0
                   ),
                 );
 

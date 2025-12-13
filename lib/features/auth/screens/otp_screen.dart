@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/widgets/custom_text_field.dart';
 import '../../../core/widgets/primary_button.dart';
-import '../services/auth_service.dart';
 
-class OTPScreen extends StatefulWidget {
+class OTPScreen extends ConsumerStatefulWidget {
   const OTPScreen({
     required this.verificationId,
     required this.phoneNumber,
@@ -18,13 +19,12 @@ class OTPScreen extends StatefulWidget {
   final bool isLinking; // True when linking phone to existing account
 
   @override
-  State<OTPScreen> createState() => _OTPScreenState();
+  ConsumerState<OTPScreen> createState() => _OTPScreenState();
 }
 
-class _OTPScreenState extends State<OTPScreen> {
+class _OTPScreenState extends ConsumerState<OTPScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _otpController = TextEditingController();
-  final AuthService _authService = AuthService();
 
   bool _isLoading = false;
   bool _isResending = false;
@@ -72,20 +72,24 @@ class _OTPScreenState extends State<OTPScreen> {
       _errorMessage = null;
     });
     try {
+      final enhancedAuth = ref.read(enhancedAuthServiceProvider);
       if (widget.isLinking) {
-        // Link phone to existing account
-        await _authService.linkPhoneCredential(
+        // Link phone to existing account - use verifyOTP and then link
+        final credential = await enhancedAuth.verifyOTP(
           _currentVerificationId,
           _otpController.text.trim(),
-          context,
         );
-        // linkPhoneCredential handles the pop and snackbar
+        if (credential != null && mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Phone number linked successfully!')),
+          );
+        }
       } else {
         // Normal phone sign-in
-        await _authService.signInWithPhoneNumber(
+        await enhancedAuth.verifyOTP(
           _currentVerificationId,
           _otpController.text.trim(),
-          context,
         );
       }
     } catch (e) {
@@ -110,17 +114,9 @@ class _OTPScreenState extends State<OTPScreen> {
     });
 
     try {
-      await _authService.resendPhoneOTP(
-        widget.phoneNumber,
-        context,
-        onCodeSent: (newVerificationId) {
-          if (mounted) {
-            setState(() {
-              _currentVerificationId = newVerificationId;
-            });
-          }
-        },
-      );
+      final enhancedAuth = ref.read(enhancedAuthServiceProvider);
+      await enhancedAuth.sendSecureOTP(widget.phoneNumber, context);
+      // Note: sendSecureOTP handles navigation internally
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

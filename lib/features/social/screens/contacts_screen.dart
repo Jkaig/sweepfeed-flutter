@@ -60,7 +60,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text(
+            child: const Text(
               'Not Now',
               style: TextStyle(color: AppColors.textMuted),
             ),
@@ -104,7 +104,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: Text(
+            child: const Text(
               'Cancel',
               style: TextStyle(color: AppColors.textMuted),
             ),
@@ -143,7 +143,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.contacts_outlined,
                     size: 64,
                     color: AppColors.textMuted,
@@ -192,7 +192,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
                     contact.displayName?.isNotEmpty == true
                         ? contact.displayName![0].toUpperCase()
                         : '?',
-                    style: TextStyle(color: AppColors.brandCyan),
+                    style: const TextStyle(color: AppColors.brandCyan),
                   ),
                 ),
                 title: Text(
@@ -230,7 +230,7 @@ class _ContactsScreenState extends ConsumerState<ContactsScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
+              const Icon(
                 Icons.error_outline,
                 size: 64,
                 color: AppColors.errorRed,

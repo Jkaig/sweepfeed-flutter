@@ -9,9 +9,7 @@ class BadgeWidget extends StatelessWidget {
   final VoidCallback? onTap;
 
   const BadgeWidget({
-    super.key,
-    required this.badge,
-    required this.isUnlocked,
+    required this.badge, required this.isUnlocked, super.key,
     this.onTap,
   });
 

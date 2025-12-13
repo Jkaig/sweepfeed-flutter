@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../contests/widgets/unified_contest_card.dart';
-import '../services/saved_contests_service.dart';
 
 class SavedScreen extends ConsumerWidget {
   const SavedScreen({super.key});

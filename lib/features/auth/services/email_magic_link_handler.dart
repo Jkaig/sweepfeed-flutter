@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/navigation/navigator_key.dart';
 import '../../../core/utils/logger.dart';
-import 'auth_service.dart';
+import 'enhanced_auth_service.dart';
 
 /// Handles email magic link authentication when the app is opened via deep link
 class EmailMagicLinkHandler {
@@ -22,7 +22,6 @@ class EmailMagicLinkHandler {
   static final EmailMagicLinkHandler _instance = EmailMagicLinkHandler._internal();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final AuthService _authService = AuthService();
   final AppLinks _appLinks = AppLinks();
   final FirebaseAnalytics _analytics = FirebaseAnalytics.instance;
 
@@ -192,12 +191,9 @@ class EmailMagicLinkHandler {
         );
       }
 
-      // Sign in with the email link
-      await _authService.signInWithEmailLink(
-        email,
-        emailLink,
-        navContext,
-      );
+      // Sign in with the email link using EnhancedAuthService
+      final enhancedAuth = EnhancedAuthService();
+      await enhancedAuth.verifyEmailLink(emailLink);
 
       // Clear the pending email after successful sign-in
       await _clearPendingAuth(prefs);

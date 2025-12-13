@@ -275,7 +275,7 @@ class _PodiumWidget extends StatelessWidget {
           if (second != null) 
             Expanded(child: _PodiumStep(entry: second, rank: 2, height: 180)),
           if (first != null) 
-            Expanded(flex: 1, child: _PodiumStep(entry: first, rank: 1, height: 230, isFirst: true)),
+            Expanded(child: _PodiumStep(entry: first, rank: 1, height: 230, isFirst: true)),
           if (third != null) 
             Expanded(child: _PodiumStep(entry: third, rank: 3, height: 150)),
         ],
@@ -404,13 +404,12 @@ class _PodiumStep extends StatelessWidget {
             ),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
             border: Border(
-              top: BorderSide(color: _getRankColor(rank).withValues(alpha: 0.5), width: 1),
+              top: BorderSide(color: _getRankColor(rank).withValues(alpha: 0.5)),
               left: BorderSide(color: _getRankColor(rank).withValues(alpha: 0.3), width: 0.5),
               right: BorderSide(color: _getRankColor(rank).withValues(alpha: 0.3), width: 0.5),
             ),
           ),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               const SizedBox(height: 12),
               Text(
@@ -633,7 +632,7 @@ class _YourRankCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.emoji_events,
                       color: AppColors.brandCyan,
                       size: 28,
@@ -692,11 +691,11 @@ class _YourRankCard extends StatelessWidget {
 
   String _getRankMessage(int rank) {
     if (rank <= 10) {
-      return 'Amazing! You\'re in the top 10! 🎉';
+      return "Amazing! You're in the top 10! 🎉";
     } else if (rank <= 50) {
       return 'Great job! Keep climbing! 💪';
     } else if (rank <= 100) {
-      return 'You\'re doing well! Keep it up! ⭐';
+      return "You're doing well! Keep it up! ⭐";
     } else {
       return 'Keep earning Dust Bunnies to climb higher! 🐰';
     }

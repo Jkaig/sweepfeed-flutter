@@ -1,7 +1,9 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:async';
 
 import '../../../core/models/contest.dart';
 import '../../../core/models/recommendation_reason.dart';
@@ -10,11 +12,13 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/greeting_utils.dart';
 import '../../../core/utils/responsive_helper.dart';
+import '../../../core/widgets/animated_gradient_background.dart';
+import '../../../core/widgets/glassmorphic_container.dart';
 import '../../gamification/screens/rewards_screen.dart';
+import '../../gamification/widgets/daily_challenge_card.dart';
 import '../../navigation/widgets/side_drawer.dart';
 import '../../notifications/screens/notification_center_screen.dart';
 import '../../profile/screens/profile_screen.dart';
-import '../../search/screens/search_screen.dart';
 import '../../subscription/screens/premium_subscription_screen.dart';
 import '../providers/contest_providers.dart';
 import '../providers/filter_providers.dart';
@@ -22,16 +26,12 @@ import '../providers/home_search_provider.dart';
 import '../widgets/contest_feed_skeleton.dart';
 import '../widgets/empty_contest_state.dart';
 import '../widgets/filter_bottom_sheet.dart';
-import '../widgets/home_search_bar.dart';
-import '../widgets/search_suggestions.dart';
-import '../widgets/popular_sweepstakes_list.dart';
-import '../widgets/unified_contest_card.dart';
 import '../widgets/glassmorphic_tab_bar.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import '../../../core/widgets/glassmorphic_container.dart';
-import '../../../core/widgets/animated_gradient_background.dart';
+import '../widgets/home_search_bar.dart';
+import '../widgets/popular_sweepstakes_list.dart';
+import '../widgets/search_suggestions.dart';
+import '../widgets/unified_contest_card.dart';
 import 'contest_detail_screen.dart';
-import '../../gamification/widgets/daily_challenge_card.dart';
 
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -102,9 +102,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               ref.read(savedContestsServiceProvider).saveContest(contest);
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
+                const SnackBar(
                   content: Text(
-                    'You\'ve reached your saved contests limit. Upgrade to save more!',
+                    "You've reached your saved contests limit. Upgrade to save more!",
                   ),
                 ),
               );
@@ -163,9 +163,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             drawer: const SideDrawer(),
             backgroundColor: Colors.transparent,
             body: SafeArea(
-          child: CustomScrollView(
-            controller: _scrollController,
-            slivers: [
+              child: CustomScrollView(
+                controller: _scrollController,
+                slivers: [
               SliverAppBar(
                 backgroundColor: Colors.transparent, // Let gradient show through
                 floating: true,
@@ -378,9 +378,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               SliverFillRemaining(
                 child: Stack(
                   children: [
-                    _isSearching
-                        ? _buildSearchResults()
-                        : TabBarView(
+                    if (_isSearching) _buildSearchResults() else TabBarView(
                             controller: _tabController,
                             children: [
                               _buildPersonalizedFeed(personalizedFeedAsync),
@@ -397,10 +395,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       ),
                   ],
                 ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
+        ],
       ),
     );
   }
@@ -443,7 +443,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              'You\'ve reached your saved contests limit (${usageLimits.maxSavedContests}). Upgrade to save more!',
+                              "You've reached your saved contests limit (${usageLimits.maxSavedContests}). Upgrade to save more!",
                             ),
                             action: SnackBarAction(
                               label: 'Upgrade',
@@ -615,7 +615,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              'You\'ve reached your saved contests limit (${usageLimits.maxSavedContests}). Upgrade to save more!',
+                              "You've reached your saved contests limit (${usageLimits.maxSavedContests}). Upgrade to save more!",
                             ),
                             action: SnackBarAction(
                               label: 'Upgrade',

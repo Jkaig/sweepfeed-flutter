@@ -322,7 +322,6 @@ class AppTheme {
             borderRadius: BorderRadius.circular(16), // More rounded
             side: const BorderSide(
               color: AppColors.primaryLight,
-              width: 1,
             ),
           ),
         ),

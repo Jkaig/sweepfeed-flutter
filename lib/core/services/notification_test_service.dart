@@ -452,6 +452,8 @@ class NotificationTestService {
         return ModernNotificationType.newFeature;
       case ModernNotificationCategory.achievements:
         return ModernNotificationType.badgeUnlocked;
+      case ModernNotificationCategory.hotSweepstakes:
+        return ModernNotificationType.newContest;
     }
   }
 
@@ -473,6 +475,8 @@ class NotificationTestService {
         return 'Game Updates';
       case ModernNotificationCategory.achievements:
         return 'Achievements';
+      case ModernNotificationCategory.hotSweepstakes:
+        return 'Hot Sweepstakes';
     }
   }
 

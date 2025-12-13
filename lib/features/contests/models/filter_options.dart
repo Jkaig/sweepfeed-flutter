@@ -1,3 +1,5 @@
+import 'advanced_filter_model.dart';
+
 /// Sort options for contests
 enum SortOption {
   endingSoon,
@@ -24,6 +26,8 @@ extension SortOptionExtension on SortOption {
   }
 }
 
+
+
 /// Filter options for contest queries
 class FilterOptions {
   const FilterOptions({
@@ -32,6 +36,9 @@ class FilterOptions {
     this.maxPrizeValue = double.infinity,
     this.entryMethods = const <String>{},
     this.platforms = const <String>{},
+    this.selectedCategories = const <String>{},
+    this.selectedPrizeTypes = const <PrizeType>[],
+    this.selectedBrands = const <String>{},
     this.requiresPurchase,
     this.showEnteredContests = true,
   });
@@ -41,6 +48,9 @@ class FilterOptions {
   final double maxPrizeValue;
   final Set<String> entryMethods;
   final Set<String> platforms;
+  final Set<String> selectedCategories;
+  final List<PrizeType> selectedPrizeTypes;
+  final Set<String> selectedBrands;
   final bool? requiresPurchase;
   final bool showEnteredContests;
 
@@ -50,15 +60,22 @@ class FilterOptions {
     double? maxPrizeValue,
     Set<String>? entryMethods,
     Set<String>? platforms,
+    Set<String>? selectedCategories,
+    List<PrizeType>? selectedPrizeTypes,
+    Set<String>? selectedBrands,
     bool? requiresPurchase,
     bool? showEnteredContests,
-  }) => FilterOptions(
-      sortOption: sortOption ?? this.sortOption,
-      minPrizeValue: minPrizeValue ?? this.minPrizeValue,
-      maxPrizeValue: maxPrizeValue ?? this.maxPrizeValue,
-      entryMethods: entryMethods ?? this.entryMethods,
-      platforms: platforms ?? this.platforms,
-      requiresPurchase: requiresPurchase ?? this.requiresPurchase,
-      showEnteredContests: showEnteredContests ?? this.showEnteredContests,
-    );
+  }) =>
+      FilterOptions(
+        sortOption: sortOption ?? this.sortOption,
+        minPrizeValue: minPrizeValue ?? this.minPrizeValue,
+        maxPrizeValue: maxPrizeValue ?? this.maxPrizeValue,
+        entryMethods: entryMethods ?? this.entryMethods,
+        platforms: platforms ?? this.platforms,
+        selectedCategories: selectedCategories ?? this.selectedCategories,
+        selectedPrizeTypes: selectedPrizeTypes ?? this.selectedPrizeTypes,
+        selectedBrands: selectedBrands ?? this.selectedBrands,
+        requiresPurchase: requiresPurchase ?? this.requiresPurchase,
+        showEnteredContests: showEnteredContests ?? this.showEnteredContests,
+      );
 }

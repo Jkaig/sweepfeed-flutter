@@ -667,7 +667,6 @@ class _UnifiedOnboardingControllerState
   Widget build(BuildContext context) => PopScope(
       canPop: false, // Prevent back navigation during onboarding
       child: Scaffold(
-      child: Scaffold(
         // Remove background color as it will be covered by AnimatedGradientBackground
         backgroundColor: Colors.transparent,
         body: Stack(

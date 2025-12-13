@@ -6,10 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/providers/providers.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/widgets/glassmorphic_container.dart';
 import '../../../../core/widgets/animated_gradient_background.dart';
-import '../widgets/badge_widget.dart';
+import '../../../../core/widgets/glassmorphic_container.dart';
 import '../models/badge_model.dart' as model;
+import '../widgets/badge_widget.dart';
 
 class AchievementsScreen extends ConsumerStatefulWidget {
   const AchievementsScreen({super.key});
@@ -174,7 +174,7 @@ class _AchievementsScreenState extends ConsumerState<AchievementsScreen> {
               colors: const [
                 AppColors.brandCyan,
                 AppColors.brandGold,
-                AppColors.brandMagenta,
+                AppColors.warningOrange,
                 Colors.white,
               ],
             ),

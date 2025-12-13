@@ -1,13 +1,11 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart' show PlatformDispatcher;
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:sweepfeed/l10n/app_localizations.dart';
 
 import 'core/navigation/navigator_key.dart';
 import 'core/providers/providers.dart';
@@ -20,19 +18,17 @@ import 'core/theme/app_theme.dart';
 import 'core/utils/logger.dart';
 import 'core/widgets/anr_free_loading_screen.dart';
 import 'core/widgets/confetti_overlay.dart'; // Added import
-// Feature widgets
-import 'features/ads/widgets/admob_banner.dart';
 import 'features/auth/screens/login_screen.dart';
+import 'features/auth/services/auth_service.dart';
 import 'features/auth/services/email_magic_link_handler.dart';
-import 'features/navigation/screens/main_navigation_wrapper.dart';
+// Main Screen (Moved to feature)
+import 'features/navigation/screens/main_screen.dart';
 import 'features/onboarding/screens/adaptive_onboarding_wrapper.dart';
 // Feature screens
 // Feature screens
 import 'features/onboarding/screens/splash_screen.dart';
-import 'features/referral/widgets/return_user_dialog.dart';
 import 'features/subscription/screens/subscription_screen.dart';
-// Main Screen (Moved to feature)
-import 'features/navigation/screens/main_screen.dart';
+import 'l10n/app_localizations.dart';
 
 /// The main function, entry point of the application.
 Future<void> main() async {
@@ -74,6 +70,7 @@ Future<void> main() async {
     logger.d('Critical initialization completed');
 
     // Start background initialization (non-blocking)
+    // ReminderService will be initialized when ProviderScope is available
     unawaited(initManager.initializeBackground());
 
     // Start data loading in isolate (non-blocking)
@@ -174,17 +171,16 @@ class AuthWrapper extends ConsumerWidget {
 
     return authState.when(
       data: (state) {
-        switch (state) {
-          case AuthState.authenticated:
-            return const MainScreen();
-          case AuthState.unauthenticated:
-            return const LoginScreen();
-          case AuthState.onboarding:
-            return const AdaptiveOnboardingWrapper();
-          case AuthState.loading:
-            return const _LoadingScreen(message: 'Checking authentication...');
-          case AuthState.error:
-            return const LoginScreen();
+        if (state == AuthState.authenticated) {
+          return const MainScreen();
+        } else if (state == AuthState.unauthenticated) {
+          return const LoginScreen();
+        } else if (state == AuthState.onboarding) {
+          return const AdaptiveOnboardingWrapper();
+        } else if (state == AuthState.loading) {
+          return const _LoadingScreen(message: 'Checking authentication...');
+        } else {
+          return const LoginScreen();
         }
       },
       loading: () =>

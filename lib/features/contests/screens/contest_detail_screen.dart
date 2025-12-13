@@ -10,7 +10,6 @@ import '../../../core/widgets/loading_indicator.dart';
 import '../../../core/widgets/primary_button.dart';
 import '../../../core/widgets/webview_screen.dart';
 import '../../../features/subscription/screens/premium_subscription_screen.dart';
-import '../widgets/contest_share_dialog.dart';
 import '../widgets/unified_contest_card.dart';
 
 /// Displays the details for a single contest.
@@ -116,7 +115,7 @@ class _ContestDetailScreenState extends ConsumerState<ContestDetailScreen>
               Navigator.of(context).pop(); // Close dialog
               // Do nothing else, user didn't enter
             },
-            child: const Text('No, I didn\'t', style: TextStyle(color: AppColors.textMuted)),
+            child: const Text("No, I didn't", style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -124,20 +123,10 @@ class _ContestDetailScreenState extends ConsumerState<ContestDetailScreen>
               
               // Show loading overlay or just process
               try {
-                // Submit entry
+                // Submit entry (Sweepstakes is an alias for Contest)
                 await ref.read(entryManagementServiceProvider).submitEntry(
-                  sweepstake: Sweepstakes(
-                    id: contest.id,
-                    title: contest.title,
-                    value: contest.value,
-                    endDate: contest.endDate,
-                    sponsor: contest.sponsor,
-                    entryUrl: contest.entryUrl,
-                    isDailyEntry: contest.isDailyEntry,
-                    // Map other necessary fields from Contest to Sweepstakes
-                    // Assuming Contest model is compatible or we have a mapper
-                  ), 
-                  method: EntryMethod.web,
+                  sweepstake: contest, 
+                  method: EntryMethod.website,
                 );
                 
                 if (mounted) {
@@ -236,7 +225,7 @@ class _ContestDetailScreenState extends ConsumerState<ContestDetailScreen>
             ),
             const SizedBox(height: 24),
             Text(
-              'You\'ve reached your daily view limit',
+              "You've reached your daily view limit",
               style: AppTextStyles.titleLarge.copyWith(
                 color: AppColors.textWhite,
               ),

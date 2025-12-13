@@ -5,7 +5,7 @@ import '../../../core/providers/providers.dart';
 import '../../../core/utils/responsive_helper.dart';
 import '../../../core/widgets/empty_state_widget.dart';
 import '../../subscription/models/subscription_tiers.dart';
-import '../../subscription/services/tier_management_service.dart';
+
 import '../providers/contest_feed_provider.dart';
 import 'contest_feed_skeleton.dart';
 import 'entry_limit_reached_card.dart';

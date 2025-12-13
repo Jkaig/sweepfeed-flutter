@@ -30,6 +30,20 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('roles.admin', false) == true;
     }
     
+    function isModerator() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('roles.moderator', false) == true;
+    }
+    
+    function canModerateContent() {
+      return isAdmin() || isModerator();
+    }
+    
+    function canManageUsers() {
+      return isAdmin(); // Only admin, not moderators
+    }
+    
     function isValidUser() {
       return isAuthenticated() && request.auth.uid != null;
     }
@@ -291,6 +305,41 @@ service cloud.firestore {
         allow read: if isOwner(userId);
         allow write: if false;
       }
+      
+      // User preferences
+      match /preferences/{preferenceId} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['key', 'value', 'updatedAt']);
+      }
+      
+      // Shop inventory
+      match /inventory/{itemId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['itemId', 'purchasedAt']);
+        allow update: if isOwner(userId) && 
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isEquipped']);
+        allow delete: if false; // Immutable
+      }
+      
+      // Tracked contests for reminders
+      match /trackedContests/{contestId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['contestId', 'trackedAt', 'endDate']);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+      
+      // In-app notifications
+      match /notifications/{notificationId} {
+        allow read: if isOwner(userId);
+        allow create: if false; // Only server
+        allow update: if isOwner(userId) && 
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow delete: if isOwner(userId);
+      }
     }
     
     // ============================================
@@ -318,11 +367,12 @@ service cloud.firestore {
     }
     
     match /contestSubmissions/{submissionId} {
-      allow read: if isAdmin();
+      allow read: if canModerateContent();
       allow create: if isValidUser() && 
         request.resource.data.keys().hasAll(['title', 'prize', 'submittedBy', 'submittedAt']) &&
         request.resource.data.submittedBy == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update: if canModerateContent(); // Approve/reject submissions
+      allow delete: if isAdmin(); // Only admin can delete
     }
 
     match /contest_entries/{entryId} {
@@ -371,11 +421,9 @@ service cloud.firestore {
       allow create: if isValidUser() && 
         validateComment() &&
         request.resource.data.userId == request.auth.uid;
-      allow update: if isValidUser() && 
-        resource.data.userId == request.auth.uid &&
-        validateCommentUpdate();
-      allow delete: if isValidUser() && 
-        (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if canModerateContent() || 
+        (isValidUser() && resource.data.userId == request.auth.uid && validateCommentUpdate());
+      allow delete: if canModerateContent();
       
       function validateComment() {
         return request.resource.data.keys().hasAll(['userId', 'contestId', 'content', 'createdAt']) &&
@@ -394,19 +442,21 @@ service cloud.firestore {
     }
     
     match /comment_reports/{reportId} {
-      allow read: if isAdmin();
+      allow read: if canModerateContent();
       allow create: if isValidUser() && 
         request.resource.data.keys().hasAll(['commentId', 'reportedBy', 'reason', 'reportedAt']) &&
         request.resource.data.reportedBy == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update: if canModerateContent(); // Moderators can review
+      allow delete: if isAdmin();
     }
     
     match /contest_reports/{reportId} {
-      allow read: if isAdmin();
+      allow read: if canModerateContent();
       allow create: if isValidUser() &&
         request.resource.data.keys().hasAll(['contestId', 'reportedBy', 'reason', 'reportedAt']) &&
         request.resource.data.reportedBy == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update: if canModerateContent(); // Moderators can review
+      allow delete: if isAdmin();
     }
     
     // ============================================
@@ -524,8 +574,8 @@ service cloud.firestore {
       allow create: if isValidUser() && 
         request.resource.data.userId == request.auth.uid;
       allow read: if isValidUser() && 
-        (resource.data.userId == request.auth.uid || isAdmin());
-      allow update: if isAdmin();
+        (resource.data.userId == request.auth.uid || canModerateContent());
+      allow update: if canModerateContent(); // Moderators can respond, admin can close
       allow delete: if isAdmin();
     }
 
@@ -599,6 +649,60 @@ service cloud.firestore {
     match /privacy/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow write: if isOwner(userId) || isAdmin();
+    }
+    
+    // ============================================
+    // USER PROFILES (Legacy/Alternative)
+    // ============================================
+    match /userProfiles/{userId} {
+      allow read: if isOwner(userId) || 
+        (isValidUser() && (!exists(resource) || resource.data.get('privacy.showProfile', true) == true));
+      allow create: if isOwner(userId) && isValidUserId(userId);
+      allow update: if isOwner(userId);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+    
+    // ============================================
+    // STATS & ANALYTICS
+    // ============================================
+    match /stats/{statId} {
+      allow read: if true; // Public read for community stats
+      allow write: if false; // Only server
+    }
+    
+    // ============================================
+    // FCM TOKENS (Legacy - Migration in progress)
+    // ============================================
+    match /fcmTokens/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false; // Migrating to users.fcmToken field
+    }
+    
+    // ============================================
+    // USER ENTRIES (Top-level collection)
+    // ============================================
+    match /user_entries/{entryId} {
+      allow read: if isValidUser() && 
+        (isOwner(resource.data.get('userId', '')) || isAdmin());
+      allow create: if isValidUser() && 
+        request.resource.data.keys().hasAll(['userId', 'contestId', 'entryDate']) &&
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false; // Immutable
+    }
+    
+    // ============================================
+    // FILTER SETS (User preferences)
+    // ============================================
+    match /filter_sets/{setId} {
+      allow read: if isValidUser() && 
+        (isOwner(resource.data.get('userId', '')) || isAdmin());
+      allow create: if isValidUser() && 
+        request.resource.data.keys().hasAll(['userId', 'name', 'filters', 'createdAt']) &&
+        request.resource.data.userId == request.auth.uid;
+      allow update: if isValidUser() && 
+        resource.data.userId == request.auth.uid;
+      allow delete: if isValidUser() && 
+        resource.data.userId == request.auth.uid;
     }
     
     // ============================================

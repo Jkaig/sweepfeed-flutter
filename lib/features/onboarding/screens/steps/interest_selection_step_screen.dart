@@ -5,8 +5,8 @@ import '../../../../core/models/category_model.dart';
 import '../../../../core/providers/providers.dart' hide selectedInterestsProvider;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_text_styles.dart';
-import '../../../../core/widgets/loading_indicator.dart';
 import '../../../../core/widgets/glassmorphic_container.dart';
+import '../../../../core/widgets/loading_indicator.dart';
 import '../../controllers/unified_onboarding_controller.dart';
 import '../../widgets/onboarding_button.dart';
 import '../../widgets/onboarding_template.dart';
@@ -35,8 +35,10 @@ class InterestSelectionStepScreen extends ConsumerWidget {
           // Headers container with glass effect
           GlassmorphicContainer(
             borderRadius: 16,
-            blur: 10,
-            opacity: 0.1,
+            colors: [
+              Colors.white.withOpacity(0.1),
+              Colors.white.withOpacity(0.1),
+            ],
             child: Padding(
               padding: const EdgeInsets.all(20.0),
               child: Column(

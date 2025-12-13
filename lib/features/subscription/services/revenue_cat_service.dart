@@ -7,10 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
+import '../../../core/config/secure_config.dart';
 import '../../../core/errors/app_error.dart';
 import '../../../core/utils/logger.dart';
 import '../models/subscription_tiers.dart';
-import '../../../core/config/secure_config.dart';
 import 'tier_management_service.dart';
 
 class RevenueCatService with ChangeNotifier {

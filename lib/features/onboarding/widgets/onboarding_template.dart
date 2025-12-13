@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_colors.dart';
 
 /// Flexible template for onboarding screens
 class OnboardingTemplate extends StatelessWidget {
@@ -35,3 +34,4 @@ class OnboardingTemplate extends StatelessWidget {
       ),
     );
   }
+}

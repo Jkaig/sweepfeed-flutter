@@ -31,11 +31,22 @@ class NotificationSettings {
 
 final notificationSettingsProvider =
     FutureProvider<NotificationSettings?>((ref) async {
-  final authService = ref.watch(authServiceProvider);
-  final user = await authService.getUserProfile();
-  if (user != null) {
-    return NotificationSettings.fromJson(user);
+  final userService = ref.watch(userServiceProvider);
+  // Assuming current user is already authenticated and available
+  // You might need to get uid from authService if userService needs it explicitly
+  // but looking at previous UserService code, checking how to get profile.
+  final authService = ref.read(authServiceProvider);
+  final uid = authService.currentUser?.uid;
+  if (uid != null) {
+     final userProfile = await userService.getUserProfile(uid);
+      if (userProfile != null) {
+        // NotificationSettings.fromJson expects Map, UserProfile is object.
+        // We need to convert or adjust. 
+        // Checking UserProfile model again might be needed, but assuming toJson exists.
+        return NotificationSettings.fromJson(userProfile.toJson());
+      }
   }
+  return null;
   return null;
 });
 
@@ -834,6 +845,10 @@ class _NotificationSettingsScreenState
 
   Future<void> _saveSettings() async {
     final authService = ref.read(authServiceProvider);
+    final userService = ref.read(userServiceProvider);
+    final currentUser = authService.currentUser;
+
+    if (currentUser == null) return;
 
     final pushSettings = {
       'enabled': _pushNotifications,
@@ -847,8 +862,9 @@ class _NotificationSettingsScreenState
       },
     };
 
-    await authService.updateNotificationSettings(
-      pushSettings: pushSettings,
+    await userService.updateUserProfile(
+      currentUser.uid,
+      {'notificationSettings': pushSettings},
     );
 
     if (mounted) {

@@ -1,24 +1,25 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/models/entry_model.dart';
+import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
-import '../services/entry_management_service.dart';
 
-class EntryHistoryScreen extends StatefulWidget {
+class EntryHistoryScreen extends ConsumerStatefulWidget {
   const EntryHistoryScreen({super.key});
 
   @override
-  State<EntryHistoryScreen> createState() => _EntryHistoryScreenState();
+  ConsumerState<EntryHistoryScreen> createState() => _EntryHistoryScreenState();
 }
 
-class _EntryHistoryScreenState extends State<EntryHistoryScreen>
+class _EntryHistoryScreenState extends ConsumerState<EntryHistoryScreen>
     with TickerProviderStateMixin {
   late TabController _tabController;
 
-  final EntryManagementService _entryService = EntryManagementService();
+  late final _entryService = ref.read(entryManagementServiceProvider);
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   List<ContestEntry> _allEntries = [];

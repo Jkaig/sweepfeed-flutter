@@ -30,7 +30,6 @@ class HomeSearchBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(26),
               border: Border.all(
                 color: AppColors.brandCyan.withValues(alpha: 0.2),
-                width: 1.0,
               ),
             ),
             child: Row(

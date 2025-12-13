@@ -1,4 +1,5 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,7 +16,7 @@ enum AuthState {
 class AuthService {
   AuthService(this._ref) {
     _authStateChangesSubscription =
-        _ref.read(authStateChangesProvider).listen((user) {
+        _ref.read(firebaseAuthProvider).authStateChanges().listen((user) {
       _user = user;
       _updateAuthState();
     });
@@ -24,6 +25,8 @@ class AuthService {
   final Ref _ref;
   User? _user;
   late final StreamSubscription<User?> _authStateChangesSubscription;
+  
+  User? get currentUser => _user;
 
   final StateController<AuthState> _authStateController =
       StateController(AuthState.loading);
@@ -44,7 +47,7 @@ class AuthService {
           .get();
 
       if (userDoc.exists) {
-        final userData = userDoc.data() as Map<String, dynamic>?;
+        final userData = userDoc.data();
         final onboardingCompleted =
             userData?['onboardingCompleted'] as bool? ?? false;
         if (onboardingCompleted) {
@@ -58,6 +61,54 @@ class AuthService {
     } catch (e) {
       _authStateController.state = AuthState.error;
     }
+  }
+
+  Future<void> signOut() async {
+    await _ref.read(firebaseAuthProvider).signOut();
+  }
+
+  Future<void> signInWithGoogle(context) async {
+    // proportional implementation
+    try {
+      final googleProvider = GoogleAuthProvider();
+      await _ref.read(firebaseAuthProvider).signInWithProvider(googleProvider);
+    } catch (e) {
+      // Handle error
+      rethrow;
+    }
+  }
+
+  Future<void> signInWithApple(context) async {
+     try {
+      final appleProvider = AppleAuthProvider();
+      await _ref.read(firebaseAuthProvider).signInWithProvider(appleProvider);
+    } catch (e) {
+      // Handle error
+      rethrow;
+    }
+  }
+
+  Future<void> sendSignInLinkToEmail(String email, context) async {
+     try {
+      var acs = ActionCodeSettings(
+        url: 'https://sweepfeed.page.link/email-login',
+        handleCodeInApp: true,
+        iOSBundleId: 'com.sweepfeed.app',
+        androidPackageName: 'com.sweepfeed.app',
+        androidInstallApp: true,
+        androidMinimumVersion: '12',
+      );
+      await _ref.read(firebaseAuthProvider).sendSignInLinkToEmail(
+        email: email, 
+        actionCodeSettings: acs
+      );
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> linkPhoneNumberForBackup(String phone, context) async {
+    // Implementation for phone linking
   }
 
   void dispose() {

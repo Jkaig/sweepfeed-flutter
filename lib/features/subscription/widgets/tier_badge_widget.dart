@@ -243,7 +243,7 @@ class TierStatusWidget extends ConsumerWidget {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              feature,
+                              feature.title,
                               style: AppTextStyles.bodySmall,
                             ),
                           ),

@@ -4,8 +4,7 @@ import '../../../core/widgets/glassmorphic_container.dart';
 
 class GlassmorphicTabBar extends StatelessWidget implements PreferredSizeWidget {
   const GlassmorphicTabBar({
-    super.key,
-    required this.tabs,
+    required this.tabs, super.key,
     this.controller,
   });
 

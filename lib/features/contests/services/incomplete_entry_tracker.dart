@@ -1,14 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../../core/models/contest.dart';
 import '../../../core/utils/logger.dart';
 
 /// Tracks incomplete contest entries when users click external links
 /// but don't complete the entry process
 class IncompleteEntryTracker {
+  factory IncompleteEntryTracker() => _instance;
   IncompleteEntryTracker._();
   static final IncompleteEntryTracker _instance = IncompleteEntryTracker._();
-  factory IncompleteEntryTracker() => _instance;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;

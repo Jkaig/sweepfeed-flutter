@@ -94,7 +94,7 @@ class _DailyCheckInScreenState extends ConsumerState<DailyCheckInScreen> {
     // If streak is 0, we are on day 1 (index 0)
     // If streak is 1 (claimed), we want to show day 1 completed
     final currentStreak = _streakData!.currentStreak;
-    int dayIndex = (currentStreak % 7);
+    var dayIndex = currentStreak % 7;
     if (_hasClaimed && currentStreak > 0) {
       // If we just claimed, the streak updated, so dayIndex reflects NEXT day target
       // But we want to show the CURRENT day as completed.
@@ -108,7 +108,7 @@ class _DailyCheckInScreenState extends ConsumerState<DailyCheckInScreen> {
       insetPadding: const EdgeInsets.all(16),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
-        child: Container(
+        child: SizedBox(
           height: 600,
           width: double.infinity,
           child: Stack(
@@ -174,9 +174,9 @@ class _DailyCheckInScreenState extends ConsumerState<DailyCheckInScreen> {
                             // Determine status
                             // If index < dayIndex, it's a past completed day
                             // If index == dayIndex, it's today
-                            bool isPast = index < dayIndex;
-                            bool isToday = index == dayIndex;
-                            bool isCompleted = isPast || (_hasClaimed && isToday);
+                            var isPast = index < dayIndex;
+                            var isToday = index == dayIndex;
+                            var isCompleted = isPast || (_hasClaimed && isToday);
 
                             // Logic adjustment:
                             // We need to look at if it's completed based on 'currentStreak'

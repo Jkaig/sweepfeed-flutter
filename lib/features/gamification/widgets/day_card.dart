@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/glassmorphic_container.dart';
 
 class DayCard extends StatelessWidget {
   const DayCard({

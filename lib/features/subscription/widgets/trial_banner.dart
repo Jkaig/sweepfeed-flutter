@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sweepfeed/features/subscription/screens/premium_subscription_screen.dart';
+
 import '../../../core/providers/providers.dart';
+import '../screens/premium_subscription_screen.dart';
 
 class TrialBanner extends ConsumerWidget {
   const TrialBanner({super.key});

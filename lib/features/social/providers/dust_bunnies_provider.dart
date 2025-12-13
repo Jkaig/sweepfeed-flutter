@@ -1,5 +1,6 @@
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/providers/providers.dart';
 import '../models/dust_bunnies_shop.dart';
 
 /// Provider for managing DustBunnies shop
@@ -92,7 +93,7 @@ class DustBunniesShopNotifier extends StateNotifier<AsyncValue<List<ShopItem>>> 
       const ShopItem(
         id: 'tool_entry_tracker',
         name: 'Entry Tracker Pro',
-        description: 'Advanced tracking to see which contests you\'ve entered. Never miss a daily entry again!',
+        description: "Advanced tracking to see which contests you've entered. Never miss a daily entry again!",
         type: ShopItemType.utility,
         rarity: ShopItemRarity.rare,
         price: 300,

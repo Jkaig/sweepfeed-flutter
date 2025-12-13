@@ -57,7 +57,7 @@ class InterestSelectionScreen extends ConsumerWidget {
                       loading: () => const Center(
                         child: LoadingIndicator(),
                       ),
-                      error: (err, stack) => Center(
+                      error: (err, stack) => const Center(
                         child: Text(
                           'Failed to load categories',
                           style: TextStyle(color: AppColors.errorRed),

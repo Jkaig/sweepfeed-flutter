@@ -247,6 +247,8 @@ class NotificationActionsService {
         return 'social_actions';
       case ModernNotificationCategory.achievements:
         return 'achievement_actions';
+      case ModernNotificationCategory.hotSweepstakes:
+        return 'hot_sweepstakes_actions';
       case ModernNotificationCategory.reminders:
         return 'reminder_actions';
       case ModernNotificationCategory.highPriority:

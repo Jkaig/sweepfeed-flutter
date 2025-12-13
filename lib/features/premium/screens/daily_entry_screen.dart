@@ -3,15 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/models/contest.dart';
+import '../../../core/models/entry_model.dart';
+import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
-import '../../../core/providers/providers.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/widgets/paywall_widget.dart';
 import '../../contests/screens/contest_detail_screen.dart';
 import '../../subscription/screens/subscription_screen.dart';
-import '../../entries/services/entry_management_service.dart';
-import '../../../core/models/entry_model.dart';
 
 class DailyEntryScreen extends ConsumerStatefulWidget {
   const DailyEntryScreen({super.key});
@@ -64,7 +63,7 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
                 user.uid,
                 contest.id,
               );
-              statusMap[contest.id] = !status['canEnter'] as bool;
+              statusMap[contest.id] = !status['canEnter'];
             } catch (e) {
               statusMap[contest.id] = false;
             }
@@ -255,7 +254,7 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
                 label: Text(
                   _isEnteringAll
                       ? 'Entering...'
-                      : 'Enter All Dailies (${_remainingDailiesCount})',
+                      : 'Enter All Dailies ($_remainingDailiesCount)',
                   style: AppTextStyles.bodyMedium.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -289,7 +288,7 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           colors: [
             AppColors.primaryMedium,
             AppColors.primaryLight,
@@ -300,7 +299,6 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: AppColors.brandCyan.withOpacity(0.3),
-          width: 1,
         ),
       ),
       child: Column(
@@ -327,7 +325,6 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
                     color: remaining > 0
                         ? AppColors.warningOrange
                         : AppColors.successGreen,
-                    width: 1,
                   ),
                 ),
                 child: Text(
@@ -417,7 +414,7 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
+              const Icon(
                 Icons.check_circle_outline,
                 size: 64,
                 color: AppColors.textMuted,
@@ -464,7 +461,6 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
           color: hasEntered
               ? AppColors.successGreen.withOpacity(0.3)
               : AppColors.primaryLight,
-          width: 1,
         ),
       ),
       child: ListTile(
@@ -506,7 +502,7 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
             const SizedBox(height: 4),
             Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.emoji_events,
                   size: 14,
                   color: AppColors.brandCyan,
@@ -528,7 +524,7 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
             const SizedBox(height: 4),
             Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.calendar_today,
                   size: 14,
                   color: AppColors.textMuted,
@@ -553,7 +549,7 @@ class DailyEntryScreenState extends ConsumerState<DailyEntryScreen>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.check,
                       size: 12,
                       color: AppColors.successGreen,

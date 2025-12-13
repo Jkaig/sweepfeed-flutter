@@ -12,8 +12,7 @@ class GlassmorphicContainer extends StatelessWidget {
   final Border? border;
 
   const GlassmorphicContainer({
-    super.key,
-    required this.child,
+    required this.child, super.key,
     this.borderRadius = 20,
     this.blur = 10,
     this.begin = Alignment.topLeft,

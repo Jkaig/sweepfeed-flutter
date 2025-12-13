@@ -4,8 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/models/comment_model.dart';
-import '../../../core/utils/logger.dart';
 import '../../../core/security/security_utils.dart';
+import '../../../core/utils/logger.dart';
 
 class CommentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;

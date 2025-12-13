@@ -292,7 +292,11 @@ class UpgradePromptDialog extends ConsumerWidget {
 
       case UpgradeTriggerType.timeBased:
       case UpgradeTriggerType.social:
-        return triggerResult.targetTier.features.take(3).toList();
+        return triggerResult.targetTier.features
+            .where((f) => f.included)
+            .take(3)
+            .map((f) => f.title)
+            .toList();
     }
   }
 

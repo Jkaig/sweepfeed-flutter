@@ -82,7 +82,7 @@ class AdvancedFilterSheet extends ConsumerWidget {
         final hasUnlockedSort = ref.watch(
           FutureProvider((ref) async {
             final unlockService = ref.watch(featureUnlockServiceProvider);
-            return await unlockService.hasUnlockedFeature('tool_sort_ending_soon');
+            return unlockService.hasUnlockedFeature('tool_sort_ending_soon');
           }),
         );
 
@@ -106,13 +106,12 @@ class AdvancedFilterSheet extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: AppColors.warningOrange,
-                    width: 1,
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.lock,
                       size: 12,
                       color: AppColors.warningOrange,
@@ -178,12 +177,11 @@ class AdvancedFilterSheet extends ConsumerWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: AppColors.warningOrange.withOpacity(0.5),
-            width: 1,
           ),
         ),
         child: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.lock_outline,
               color: AppColors.warningOrange,
               size: 24,
@@ -210,7 +208,7 @@ class AdvancedFilterSheet extends ConsumerWidget {
                 ],
               ),
             ),
-            Icon(
+            const Icon(
               Icons.arrow_forward_ios,
               color: AppColors.brandCyan,
               size: 16,
@@ -237,7 +235,7 @@ class AdvancedFilterSheet extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
+            child: const Text(
               'Cancel',
               style: TextStyle(color: AppColors.textMuted),
             ),
@@ -250,7 +248,7 @@ class AdvancedFilterSheet extends ConsumerWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.brandCyan,
             ),
-            child: Text(
+            child: const Text(
               'Go to Shop',
               style: TextStyle(color: AppColors.primaryDark),
             ),
@@ -272,7 +270,7 @@ class AdvancedFilterSheet extends ConsumerWidget {
         final hasUnlockedFilter = ref.watch(
           FutureProvider((ref) async {
             final unlockService = ref.watch(featureUnlockServiceProvider);
-            return await unlockService.hasUnlockedFeature('tool_filter_pro');
+            return unlockService.hasUnlockedFeature('tool_filter_pro');
           }),
         );
 
@@ -296,13 +294,12 @@ class AdvancedFilterSheet extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: AppColors.warningOrange,
-                        width: 1,
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.lock,
                           size: 12,
                           color: AppColors.warningOrange,
@@ -392,12 +389,11 @@ class AdvancedFilterSheet extends ConsumerWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: AppColors.warningOrange.withOpacity(0.5),
-            width: 1,
           ),
         ),
         child: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.lock_outline,
               color: AppColors.warningOrange,
               size: 24,
@@ -424,7 +420,7 @@ class AdvancedFilterSheet extends ConsumerWidget {
                 ],
               ),
             ),
-            Icon(
+            const Icon(
               Icons.arrow_forward_ios,
               color: AppColors.brandCyan,
               size: 16,
@@ -442,7 +438,7 @@ class AdvancedFilterSheet extends ConsumerWidget {
         final hasUnlockedFilter = ref.watch(
           FutureProvider((ref) async {
             final unlockService = ref.watch(featureUnlockServiceProvider);
-            return await unlockService.hasUnlockedFeature('tool_filter_pro');
+            return unlockService.hasUnlockedFeature('tool_filter_pro');
           }),
         );
 
@@ -469,13 +465,12 @@ class AdvancedFilterSheet extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: AppColors.warningOrange,
-                        width: 1,
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.lock,
                           size: 12,
                           color: AppColors.warningOrange,

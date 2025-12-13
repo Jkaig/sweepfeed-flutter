@@ -112,7 +112,7 @@ export const purchaseShopItem = functions.https.onCall(async (data, context) => 
 
   const db = admin.firestore();
 
-  const itemRef = db.collection('shopItems').doc(itemId);
+  const itemRef = db.collection('shop_items').doc(itemId);
   const userRef = db.collection('users').doc(userId);
 
   return db.runTransaction(async (transaction) => {

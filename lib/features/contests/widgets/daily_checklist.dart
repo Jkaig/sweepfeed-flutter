@@ -4,11 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/models/contest.dart';
 import '../../../core/utils/page_transitions.dart';
+import '../../../core/widgets/confetti_overlay.dart';
 import '../../../core/widgets/empty_state_widget.dart';
 import '../../../core/widgets/loading_indicator.dart';
 import '../../checklist/providers/checklist_provider.dart';
 import '../screens/contest_detail_screen.dart';
-import '../../../core/widgets/confetti_overlay.dart';
 import 'interactive_daily_checklist_item.dart';
 
 /// A widget that displays the user's daily checklist of contests.

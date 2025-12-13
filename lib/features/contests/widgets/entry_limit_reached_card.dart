@@ -49,7 +49,7 @@ class EntryLimitReachedCard extends StatelessWidget {
             height: 120,
             errorBuilder: (context, error, stackTrace) {
               // Fallback to icon if image not found
-              return Icon(
+              return const Icon(
                 Icons.sentiment_very_dissatisfied,
                 size: 120,
                 color: AppColors.warningOrange,
