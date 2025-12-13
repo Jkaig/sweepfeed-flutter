@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/animated_gradient_background.dart';
 import '../../../core/widgets/custom_app_bar.dart';
 import '../../../core/widgets/custom_back_button.dart';
+import '../../../core/widgets/glassmorphic_container.dart';
 
 class AppearanceSettingsScreen extends ConsumerWidget {
   const AppearanceSettingsScreen({super.key});
@@ -24,428 +26,400 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     final settings = ref.watch(appSettingsProvider);
     final settingsNotifier = ref.watch(appSettingsProvider.notifier);
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: const CustomAppBar(
-        title: 'Appearance',
-        leading: CustomBackButton(),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Theme Selection
-            Card(
-              color: AppColors.primaryMedium,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: AppColors.brandCyan.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.palette_outlined,
-                          color: AppColors.brandCyan,
-                          size: 20,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Theme Mode',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildThemeOption(
-                      'Light Mode',
-                      'Bright theme with light backgrounds',
-                      Icons.light_mode,
-                      ThemeMode.light,
-                      currentTheme,
-                      (value) {
-                        if (value != null) {
-                          themeNotifier.setThemeMode(value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    _buildThemeOption(
-                      'Dark Mode',
-                      'Dark theme with reduced eye strain',
-                      Icons.dark_mode,
-                      ThemeMode.dark,
-                      currentTheme,
-                      (value) {
-                        if (value != null) {
-                          themeNotifier.setThemeMode(value);
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    _buildThemeOption(
-                      'System Default',
-                      'Matches your device settings',
-                      Icons.settings_brightness,
-                      ThemeMode.system,
-                      currentTheme,
-                      (value) {
-                        if (value != null) {
-                          themeNotifier.setThemeMode(value);
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Accent Color Selection
-            Card(
-              color: AppColors.primaryMedium,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: AppColors.brandCyan.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.color_lens_outlined,
-                          color: AppColors.brandCyan,
-                          size: 20,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Accent Color',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Choose your preferred accent color',
-                      style: TextStyle(
-                        color: AppColors.textLight,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 16,
-                      children: _accentColors.entries
-                          .map((entry) => _buildColorOption(
-                              entry.key,
-                              entry.value,
-                              settings.accentColor,
-                              settingsNotifier,),)
-                          .toList(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Font & Display Settings
-            Card(
-              color: AppColors.primaryMedium,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: AppColors.brandCyan.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.text_fields,
-                          color: AppColors.brandCyan,
-                          size: 20,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Text & Display',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Font Size Slider
-                    Column(
+    return Stack(
+      children: [
+        const Positioned.fill(child: AnimatedGradientBackground()),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: const CustomAppBar(
+            title: 'Appearance',
+            leading: CustomBackButton(),
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Theme Selection
+                GlassmorphicContainer(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        const Row(
                           children: [
-                            const Text(
-                              'Font Size',
+                            Icon(
+                              Icons.palette_outlined,
+                              color: AppColors.brandCyan,
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Theme Mode',
                               style: TextStyle(
                                 color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            Text(
-                              '${settings.fontSize.round()}sp',
-                              style: const TextStyle(
-                                color: AppColors.brandCyan,
-                                fontWeight: FontWeight.w600,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        _buildThemeOption(
+                          'Light Mode',
+                          'Bright theme with light backgrounds',
+                          Icons.light_mode,
+                          ThemeMode.light,
+                          currentTheme,
+                          (value) {
+                            if (value != null) {
+                              themeNotifier.setThemeMode(value);
+                            }
+                          },
+                        ),
                         const SizedBox(height: 8),
-                        SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            activeTrackColor: AppColors.brandCyan,
-                            inactiveTrackColor: AppColors.primaryLight,
-                            thumbColor: AppColors.brandCyan,
-                            overlayColor:
-                                AppColors.brandCyan.withValues(alpha: 0.3),
-                          ),
-                          child: Slider(
-                            value: settings.fontSize,
-                            min: 12.0,
-                            max: 24.0,
-                            divisions: 12,
-                            onChanged: settingsNotifier.setFontSize,
-                          ),
+                        _buildThemeOption(
+                          'Dark Mode',
+                          'Dark theme with reduced eye strain',
+                          Icons.dark_mode,
+                          ThemeMode.dark,
+                          currentTheme,
+                          (value) {
+                            if (value != null) {
+                              themeNotifier.setThemeMode(value);
+                            }
+                          },
                         ),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color:
-                                AppColors.primaryLight.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'Sample text at ${settings.fontSize.round()}sp',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: settings.fontSize,
+                        const SizedBox(height: 8),
+                        _buildThemeOption(
+                          'System Default',
+                          'Matches your device settings',
+                          Icons.settings_brightness,
+                          ThemeMode.system,
+                          currentTheme,
+                          (value) {
+                            if (value != null) {
+                              themeNotifier.setThemeMode(value);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Accent Color Selection
+                GlassmorphicContainer(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.color_lens_outlined,
+                              color: AppColors.brandCyan,
+                              size: 20,
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Accessibility & Performance
-            Card(
-              color: AppColors.primaryMedium,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: AppColors.brandCyan.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.accessibility_new,
-                          color: AppColors.brandCyan,
-                          size: 20,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Accessibility & Performance',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildToggleTile(
-                      'Compact Mode',
-                      'Reduce spacing and padding for more content',
-                      Icons.compress,
-                      settings.compactMode,
-                      settingsNotifier.setCompactMode,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildToggleTile(
-                      'Reduced Animations',
-                      'Minimize motion effects for better performance',
-                      Icons.animation,
-                      settings.reducedAnimations,
-                      settingsNotifier.setReducedAnimations,
-                    ),
-                    const SizedBox(height: 12),
-                    _buildToggleTile(
-                      'High Contrast',
-                      'Increase contrast for better visibility',
-                      Icons.contrast,
-                      settings.highContrast,
-                      settingsNotifier.setHighContrast,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 24),
-
-            // Preview Section
-            Card(
-              color: AppColors.primaryMedium,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                  color: AppColors.brandCyan.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(
-                          Icons.preview,
-                          color: AppColors.brandCyan,
-                          size: 20,
-                        ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Theme Preview',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.all(settings.compactMode ? 12 : 16),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryLight.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color:
-                              settings.accentColorValue.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 24,
-                                height: 24,
-                                decoration: BoxDecoration(
-                                  color: settings.accentColorValue,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Accent Color',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Sample Contests',
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Choose your preferred accent color',
+                          style: TextStyle(
+                            color: AppColors.textLight,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 16,
+                          runSpacing: 16,
+                          children: _accentColors.entries
+                              .map((entry) => _buildColorOption(
+                                  entry.key,
+                                  entry.value,
+                                  settings.accentColor,
+                                  settingsNotifier,),)
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Font & Display Settings
+                GlassmorphicContainer(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.text_fields,
+                              color: AppColors.brandCyan,
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Text & Display',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Font Size Slider
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Font Size',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  '${settings.fontSize.round()}sp',
+                                  style: const TextStyle(
+                                    color: AppColors.brandCyan,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                activeTrackColor: AppColors.brandCyan,
+                                inactiveTrackColor: AppColors.primaryLight,
+                                thumbColor: AppColors.brandCyan,
+                                overlayColor:
+                                    AppColors.brandCyan.withValues(alpha: 0.3),
+                              ),
+                              child: Slider(
+                                value: settings.fontSize,
+                                min: 12.0,
+                                max: 24.0,
+                                divisions: 12,
+                                onChanged: settingsNotifier.setFontSize,
+                              ),
+                            ),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryLight
+                                    .withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                'Sample text at ${settings.fontSize.round()}sp',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: settings.fontSize,
-                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Accessibility & Performance
+                GlassmorphicContainer(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.accessibility_new,
+                              color: AppColors.brandCyan,
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Accessibility & Performance',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildToggleTile(
+                          'Compact Mode',
+                          'Reduce spacing and padding for more content',
+                          Icons.compress,
+                          settings.compactMode,
+                          settingsNotifier.setCompactMode,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildToggleTile(
+                          'Reduced Animations',
+                          'Minimize motion effects for better performance',
+                          Icons.animation,
+                          settings.reducedAnimations,
+                          settingsNotifier.setReducedAnimations,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildToggleTile(
+                          'High Contrast',
+                          'Increase contrast for better visibility',
+                          Icons.contrast,
+                          settings.highContrast,
+                          settingsNotifier.setHighContrast,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Preview Section
+                GlassmorphicContainer(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.preview,
+                              color: AppColors.brandCyan,
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Theme Preview',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          width: double.infinity,
+                          padding:
+                              EdgeInsets.all(settings.compactMode ? 12 : 16),
+                          decoration: BoxDecoration(
+                            color:
+                                AppColors.primaryLight.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: settings.accentColorValue
+                                  .withValues(alpha: 0.5),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(
+                                      color: settings.accentColorValue,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Sample Contests',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: settings.fontSize,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: settings.compactMode ? 8 : 12),
+                              Text(
+                                'This is how your app will look with the current settings. The accent color, font size, and spacing all reflect your choices.',
+                                style: TextStyle(
+                                  color: AppColors.textLight,
+                                  fontSize: settings.fontSize * 0.9,
+                                  height: settings.compactMode ? 1.3 : 1.5,
+                                ),
+                              ),
+                              SizedBox(height: settings.compactMode ? 8 : 12),
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: settings.compactMode ? 12 : 16,
+                                  vertical: settings.compactMode ? 6 : 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: settings.accentColorValue
+                                      .withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: settings.accentColorValue
+                                        .withValues(alpha: 0.5),
+                                  ),
+                                ),
+                                child: Text(
+                                  'Enter Contests',
+                                  style: TextStyle(
+                                    color: settings.accentColorValue,
+                                    fontSize: settings.fontSize * 0.9,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                          SizedBox(height: settings.compactMode ? 8 : 12),
-                          Text(
-                            'This is how your app will look with the current settings. The accent color, font size, and spacing all reflect your choices.',
-                            style: TextStyle(
-                              color: AppColors.textLight,
-                              fontSize: settings.fontSize * 0.9,
-                              height: settings.compactMode ? 1.3 : 1.5,
-                            ),
-                          ),
-                          SizedBox(height: settings.compactMode ? 8 : 12),
-                          Container(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: settings.compactMode ? 12 : 16,
-                              vertical: settings.compactMode ? 6 : 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: settings.accentColorValue
-                                  .withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: settings.accentColorValue
-                                    .withValues(alpha: 0.5),
-                              ),
-                            ),
-                            child: Text(
-                              'Enter Contests',
-                              style: TextStyle(
-                                color: settings.accentColorValue,
-                                fontSize: settings.fontSize * 0.9,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -519,8 +493,12 @@ class AppearanceSettingsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildColorOption(String colorName, Color color, String selectedColor,
-      settingsNotifier,) {
+  Widget _buildColorOption(
+    String colorName,
+    Color color,
+    String selectedColor,
+    settingsNotifier,
+  ) {
     final isSelected = selectedColor == colorName;
 
     return GestureDetector(
@@ -537,6 +515,14 @@ class AppearanceSettingsScreen extends ConsumerWidget {
             color: isSelected ? Colors.white : Colors.transparent,
             width: 3,
           ),
+          boxShadow: [
+            if (isSelected)
+              BoxShadow(
+                color: color.withValues(alpha: 0.5),
+                blurRadius: 8,
+                spreadRadius: 2,
+              ),
+          ],
         ),
         child: isSelected
             ? const Icon(
@@ -593,7 +579,6 @@ class AppearanceSettingsScreen extends ConsumerWidget {
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
-                      fontSize: 14,
                     ),
                   ),
                   Text(

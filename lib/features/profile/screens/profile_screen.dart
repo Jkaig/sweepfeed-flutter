@@ -21,6 +21,7 @@ import '../../email/services/email_service.dart';
 import '../../gamification/screens/achievements_screen.dart';
 import '../../notifications/screens/notification_preferences_screen.dart';
 import '../../settings/screens/help_support_screen.dart';
+import '../../settings/screens/settings_screen.dart';
 import '../../subscription/models/subscription_tiers.dart';
 import '../../subscription/screens/subscription_screen.dart';
 import '../../subscription/services/tier_management_service.dart';

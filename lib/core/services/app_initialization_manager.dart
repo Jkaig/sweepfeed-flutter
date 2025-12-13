@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/ads/services/admob_service.dart';
 import '../../features/reminders/services/reminder_service.dart';
-// import '../../firebase_options.dart'; // TODO: Generate with flutterfire configure
+import '../../firebase_options.dart';
 import '../config/secure_config.dart';
 import '../utils/logger.dart';
 import 'notification_migration_service.dart';
@@ -101,7 +101,7 @@ class AppInitializationManager {
     try {
       // Initialize Firebase without options (uses default configuration)
       await Firebase.initializeApp(
-        // options: DefaultFirebaseOptions.currentPlatform, // TODO: Generate firebase_options.dart
+        options: DefaultFirebaseOptions.currentPlatform,
       ).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
