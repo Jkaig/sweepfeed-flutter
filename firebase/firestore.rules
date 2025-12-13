@@ -1,0 +1,612 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidUserId(userId) {
+      // Prevent path traversal attacks and ensure reasonable ID format
+      // Firebase UIDs are typically 28 chars, alphanumeric only
+      return userId.size() >= 20 && userId.size() <= 128 &&
+             !userId.matches('.*\\.\\./.*') &&
+             !userId.matches('.*\\./.*') &&
+             !userId.matches('.*/__.*');
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('roles.admin', false) == true;
+    }
+    
+    function isValidUser() {
+      return isAuthenticated() && request.auth.uid != null;
+    }
+    
+    function isPremiumUser() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tier', 'free') == 'premium' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tier', 'free') == 'vip' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('subscriptionTier', 'free') == 'premium');
+    }
+    
+    function isVipUser() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tier', 'free') == 'vip';
+    }
+    
+    function hasBasicOrHigher() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('tier', 'free') in ['basic', 'premium', 'vip'] ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('subscriptionTier', 'free') in ['basic', 'premium']);
+    }
+    
+    function hasPremiumAccess(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.get('subscriptionTier', 'free') == 'premium' ||
+             get(/databases/$(database)/documents/users/$(userId)).data.get('tier', 'free') in ['premium', 'vip'];
+    }
+    
+    // ============================================
+    // USER DOCUMENTS
+    // ============================================
+    
+    match /users/{userId} {
+      // Users can read their own profile, or public profiles if privacy allows
+      allow read: if isOwner(userId) ||
+        (isValidUser() && (!exists(resource) || resource.data.get('settings.privacy.showProfile', true) == true));
+
+      // Users can create their own profile on signup
+      // Note: serverTimestamp() resolves to request.time in security rules
+      allow create: if isOwner(userId) &&
+        isValidUserId(userId) &&
+        validateUserData();
+
+      // Users can update their own profile with restrictions
+      allow update: if isOwner(userId) &&
+        isValidUserId(userId) &&
+        validateUserUpdate();
+
+      // Users can delete their own account, or admins can delete any
+      allow delete: if isOwner(userId) || isAdmin();
+      
+      function validateUserData() {
+        return request.resource.data.keys().hasAll(['email', 'createdAt']) &&
+               request.resource.data.email is string &&
+               // Email can be empty string OR valid format (for edge cases)
+               (request.resource.data.email == '' || request.resource.data.email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$')) &&
+               // Validate displayName if present
+               (!request.resource.data.keys().hasAny(['displayName']) ||
+                (request.resource.data.displayName is string &&
+                 request.resource.data.displayName.size() >= 2 &&
+                 request.resource.data.displayName.size() <= 50)) &&
+               // Validate bio if present
+               (!request.resource.data.keys().hasAny(['bio']) ||
+                (request.resource.data.bio is string &&
+                 request.resource.data.bio.size() <= 500)) &&
+               request.resource.data.get('totalEntries', 0) >= 0 &&
+               request.resource.data.get('points', 0) >= 0 &&
+               request.resource.data.get('tier', 'free') in ['free', 'basic', 'premium', 'vip'];
+      }
+      
+      function validateUserUpdate() {
+        // Prevent modification of critical subscription/payment fields by client
+        // Note: 'createdAt' and 'email' are allowed to be sent in updates via merge
+        // as long as the values match existing data (handled by merge behavior)
+        let protectedFields = ['id', 'tier', 'premiumUntil', 'vipAccess',
+                              'sweepPointsSystem', 'xpSystem', 'isSubscribed', 'subscriptionId',
+                              'subscriptionPurchaseDate', 'subscriptionExpiryDate', 'subscriptionTier',
+                              'subscriptionReceipt', 'trialStarted', 'trialStartDate', 'trialExpiryDate',
+                              'cancellationRequested', 'tierUpdatedAt', 'lastPurchaseDate',
+                              'subscriptionCancelledAt', 'subscriptionStatus', 'lastBillingIssueAt'];
+        let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
+
+        // Check for disallowed field modifications
+        // Allow createdAt/email to be in request if unchanged (merge behavior)
+        // Also ensure that if displayName or bio are modified, they are valid
+        return !modifiedFields.hasAny(protectedFields) &&
+               (!modifiedFields.hasAny(['displayName']) ||
+                (request.resource.data.displayName is string &&
+                 request.resource.data.displayName.size() >= 2 &&
+                 request.resource.data.displayName.size() <= 50)) &&
+               (!modifiedFields.hasAny(['bio']) ||
+                (request.resource.data.bio is string &&
+                 request.resource.data.bio.size() <= 500)) &&
+               request.resource.data.get('totalEntries', 0) >= resource.data.get('totalEntries', 0);
+      }
+      
+      // ============================================
+      // USER SUBCOLLECTIONS
+      // ============================================
+
+      // Login history (for tracking sign-in events)
+      match /login_history/{historyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          request.resource.data.keys().hasAll(['timestamp', 'provider']);
+        allow update, delete: if false; // Immutable
+      }
+
+      // Saved contests
+      match /savedContests/{contestId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['contestId', 'savedAt']);
+        allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+      
+      // Entered contests
+      match /enteredContests/{contestId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['contestId', 'enteredAt']);
+        allow update, delete: if false; // Immutable
+      }
+      
+      // User entries
+      match /entries/{entryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['sweepstakeId', 'timestamp']) &&
+          request.resource.data.timestamp == request.time;
+        allow update, delete: if false; // Immutable
+      }
+      
+      // Entry history
+      match /entryHistory/{entryId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          request.resource.data.keys().hasAll(['contestId', 'enteredAt']);
+        allow update, delete: if false; // Immutable
+      }
+      
+      // Premium email inbox
+      match /emails/{emailId} {
+        allow read: if isOwner(userId) && hasPremiumAccess(userId);
+        allow create: if false; // Only cloud functions can create
+        allow update: if isOwner(userId) && hasPremiumAccess(userId) && 
+          validateEmailUpdate();
+        allow delete: if isOwner(userId) && hasPremiumAccess(userId);
+        
+        function validateEmailUpdate() {
+          let allowedFields = ['isRead', 'isStarred', 'tags'];
+          let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
+          return modifiedFields.hasOnly(allowedFields) && modifiedFields.size() > 0;
+        }
+      }
+      
+      // Email settings
+      match /settings/email {
+        allow read: if isOwner(userId) && hasPremiumAccess(userId);
+        allow write: if isOwner(userId) && hasPremiumAccess(userId) && 
+          validateEmailSettings();
+        
+        function validateEmailSettings() {
+          let requiredFields = ['showPromotionalEmails', 'notifyOnWinnerEmailsOnly', 'autoCategorizeEmails'];
+          return request.resource.data.keys().hasAll(requiredFields) &&
+                 request.resource.data.showPromotionalEmails is bool &&
+                 request.resource.data.notifyOnWinnerEmailsOnly is bool &&
+                 request.resource.data.autoCategorizeEmails is bool;
+        }
+      }
+      
+      // Blocked users
+      match /blockedUsers/{blockedUserId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['blockedUserId', 'blockedAt']);
+        allow delete: if isOwner(userId);
+        allow update: if false;
+      }
+      
+      // Notification consent
+      match /notification_consent/{category} {
+        allow read: if isOwner(userId);
+        allow write: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['consented', 'timestamp']);
+      }
+      
+      // Notification logs (User specific)
+      match /notification_logs/{logId} {
+        allow read: if isOwner(userId);
+        // Allow create/update for tracking purposes but ideally this should be server-side
+        allow create, update: if isOwner(userId) && 
+          request.resource.data.keys().hasAll(['lastUpdated']);
+        allow delete: if false;
+      }
+      
+      // Notification history
+      match /notification_history/{historyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          request.resource.data.keys().hasAll(['sweepstakeId', 'type', 'sentAt', 'title', 'body']);
+        allow update, delete: if false; // Immutable
+      }
+      
+      // SweepPoints history (Legacy/Server-only)
+      match /sweepPointsHistory/{historyId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if false; // Only server
+      }
+      
+      // Dust Bunnies history (Server-only preferred)
+      match /dustBunniesHistory/{historyId} {
+        allow read: if isOwner(userId);
+        allow create, update, delete: if false; // Only server
+      }
+
+      // Points Transactions (Used by GamificationService client-side)
+      match /pointsTransactions/{transactionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          request.resource.data.keys().hasAll(['amount', 'reason', 'timestamp']) &&
+          request.resource.data.amount is number &&
+          request.resource.data.amount > 0 && 
+          request.resource.data.amount <= 5000; // Cap to prevent massive abuse
+        allow update, delete: if false;
+      }
+      
+      // Rewards
+      match /rewards/{rewardId} {
+        allow read: if isOwner(userId);
+        allow update: if isOwner(userId) &&
+          request.resource.data.keys().hasOnly(['claimed']) &&
+          request.resource.data.claimed is bool &&
+          resource.data.claimed == false &&
+          request.resource.data.claimed == true;
+        allow create, delete: if false; // Only server
+      }
+      
+      // Analytics (Basic+ only)
+      match /analytics/{analyticsId} {
+        allow read: if isOwner(userId) && hasBasicOrHigher();
+        allow create, update, delete: if false; // Only server
+      }
+      
+      // Filter presets (Basic+ only)
+      match /filter_presets/{presetId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && hasBasicOrHigher() && 
+          request.resource.data.keys().hasAll(['name', 'filters', 'createdAt']);
+        allow update: if isOwner(userId) && hasBasicOrHigher();
+        allow delete: if isOwner(userId) && hasBasicOrHigher();
+      }
+      
+      // Server-side confirmation (server-only)
+      match /server_side_confirmation/{confirmationType} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+    }
+    
+    // ============================================
+    // CONTESTS & SWEEPSTAKES
+    // ============================================
+    
+    match /contests/{contestId} {
+      allow read: if isValidUser() && 
+        (!exists(resource) || 
+         (resource.data.get('isActive', true) == true &&
+          resource.data.get('endDate', timestamp.date(9999, 12, 31)) > request.time));
+      allow create: if isAdmin() && validateContestData();
+      allow update: if isAdmin() && validateContestUpdate();
+      allow delete: if isAdmin();
+      
+      function validateContestData() {
+        return request.resource.data.keys().hasAll(['title', 'description', 'prize']) &&
+               request.resource.data.get('value', 0) > 0 &&
+               request.resource.data.get('value', 0) <= 1000000;
+      }
+      
+      function validateContestUpdate() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['id', 'createdAt']);
+      }
+    }
+    
+    match /contestSubmissions/{submissionId} {
+      allow read: if isAdmin();
+      allow create: if isValidUser() && 
+        request.resource.data.keys().hasAll(['title', 'prize', 'submittedBy', 'submittedAt']) &&
+        request.resource.data.submittedBy == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /contest_entries/{entryId} {
+      allow read: if isValidUser() && 
+        (isOwner(resource.data.get('userId', '')) || isAdmin());
+      allow create: if isValidUser() && 
+        validateEntry() &&
+        request.resource.data.userId == request.auth.uid;
+      allow update: if false; // Immutable
+      allow delete: if isAdmin();
+      
+      function validateEntry() {
+        return request.resource.data.keys().hasAll(['userId', 'contestId', 'enteredAt']) &&
+               request.resource.data.userId == request.auth.uid &&
+               request.resource.data.contestId is string &&
+               exists(/databases/$(database)/documents/contests/$(request.resource.data.contestId));
+      }
+    }
+    
+    match /entry_receipts/{receiptId} {
+      allow read: if isValidUser() && 
+        (isOwner(resource.data.get('userId', '')) || isAdmin());
+      allow create: if isValidUser() && 
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false; // Immutable
+    }
+    
+    match /bulk_entries/{bulkId} {
+      allow read: if isValidUser() && 
+        (isOwner(resource.data.get('userId', '')) || isAdmin());
+      allow create: if isValidUser() && 
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+    
+    match /entry_analytics/{analyticsId} {
+      allow read, write: if false; // Only server
+    }
+    
+    // ============================================
+    // COMMENTS
+    // ============================================
+    
+    match /comments/{commentId} {
+      allow read: if isValidUser();
+      allow create: if isValidUser() && 
+        validateComment() &&
+        request.resource.data.userId == request.auth.uid;
+      allow update: if isValidUser() && 
+        resource.data.userId == request.auth.uid &&
+        validateCommentUpdate();
+      allow delete: if isValidUser() && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      
+      function validateComment() {
+        return request.resource.data.keys().hasAll(['userId', 'contestId', 'content', 'createdAt']) &&
+               request.resource.data.content is string &&
+               request.resource.data.content.size() > 0 &&
+               request.resource.data.content.size() <= 5000;
+      }
+      
+      function validateCommentUpdate() {
+        let allowedFields = ['content', 'editedAt'];
+        let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
+        return modifiedFields.hasOnly(allowedFields) &&
+               request.resource.data.content.size() > 0 &&
+               request.resource.data.content.size() <= 5000;
+      }
+    }
+    
+    match /comment_reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isValidUser() && 
+        request.resource.data.keys().hasAll(['commentId', 'reportedBy', 'reason', 'reportedAt']) &&
+        request.resource.data.reportedBy == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+    
+    match /contest_reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isValidUser() &&
+        request.resource.data.keys().hasAll(['contestId', 'reportedBy', 'reason', 'reportedAt']) &&
+        request.resource.data.reportedBy == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+    
+    // ============================================
+    // MESSAGING
+    // ============================================
+    
+    match /chats/{chatId} {
+      allow read: if isValidUser() && 
+        (resource.data.participants.hasAny([request.auth.uid]) || isAdmin());
+      allow create: if isValidUser() && 
+        request.resource.data.participants.hasAny([request.auth.uid]);
+      allow update: if isValidUser() && 
+        resource.data.participants.hasAny([request.auth.uid]);
+      allow delete: if isValidUser() && 
+        resource.data.participants.hasAny([request.auth.uid]);
+      
+      match /messages/{messageId} {
+        allow read: if isValidUser() && 
+          (get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]) || isAdmin());
+        allow create: if isValidUser() && 
+          request.resource.data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
+          request.resource.data.senderId == request.auth.uid &&
+          get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+        allow update, delete: if false; // Immutable
+      }
+    }
+    
+    // ============================================
+    // WINNERS
+    // ============================================
+    
+    match /winners/{winnerId} {
+      allow read: if isValidUser() && 
+        (isOwner(resource.data.get('userId', '')) || isAdmin());
+      allow create: if false; // Only server
+      allow update: if isValidUser() && 
+        resource.data.userId == request.auth.uid &&
+        validateWinnerUpdate();
+      allow delete: if isAdmin();
+      
+      function validateWinnerUpdate() {
+        let allowedFields = ['verificationData', 'submittedDocuments', 'status', 'updatedAt'];
+        let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
+        return modifiedFields.hasOnly(allowedFields);
+      }
+    }
+    
+    match /winner_verifications/{verificationId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only server
+    }
+    
+    // ============================================
+    // CHALLENGES & GAMIFICATION
+    // ============================================
+    
+    match /challenges/{challengeId} {
+      allow read: if isValidUser();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    match /social_challenges/{challengeId} {
+      allow read: if isValidUser() && hasBasicOrHigher();
+      allow write: if false; // Only server
+    }
+    
+    match /daily_challenges/{document} {
+      allow read: if isValidUser();
+      allow write: if false; // Only server
+    }
+    
+    match /achievements/{document} {
+      allow read: if isValidUser();
+      allow write: if false; // Only server
+    }
+    
+    match /leaderboard/{document} {
+      allow read: if isValidUser() && hasBasicOrHigher();
+      allow write: if false; // Only server
+    }
+    
+    // ============================================
+    // SUBSCRIPTIONS
+    // ============================================
+    
+    match /subscription_plans/{planId} {
+      allow read: if true; // Public
+      allow write: if false; // Only server
+    }
+    
+    match /subscription_analytics/{analyticsId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only server
+    }
+    
+    match /auto_entry_schedules/{scheduleId} {
+      allow read: if isValidUser() && isPremiumUser() && 
+        resource.data.userId == request.auth.uid;
+      allow create: if isValidUser() && isPremiumUser() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.keys().hasAll(['contestId', 'scheduledTime', 'userId']);
+      allow update: if isValidUser() && isPremiumUser() &&
+        resource.data.userId == request.auth.uid;
+      allow delete: if isValidUser() && isPremiumUser() &&
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // ============================================
+    // SUPPORT TICKETS
+    // ============================================
+    
+    match /support_tickets/{ticketId} {
+      allow create: if isValidUser() && 
+        request.resource.data.userId == request.auth.uid;
+      allow read: if isValidUser() && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ============================================
+    // ADMIN & SYSTEM
+    // ============================================
+    
+    match /admin/{document=**} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /agentSettings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /crawlSources/{sourceId} {
+      allow read, write: if isAdmin();
+    }
+    
+    match /crawlLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only server
+    }
+    
+    match /security_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only server
+    }
+    
+    match /sessions/{sessionId} {
+      allow read: if isValidUser() && 
+        resource.data.userId == request.auth.uid;
+      allow write: if isValidUser() && 
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.get('createdAt', null) == request.time;
+      allow delete: if isValidUser() && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    match /notification_queue/{queueId} {
+      allow read, write: if false; // Only server
+    }
+    
+    // Rate limits should primarily be server-managed. 
+    // Allowing read for UI, but preventing client write to ensure integrity.
+    match /rate_limits/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false; 
+    }
+    
+    match /webhook_logs/{logId} {
+      allow read, write: if false; // Only server
+    }
+    
+    match /webhook_errors/{errorId} {
+      allow read, write: if false; // Only server
+    }
+    
+    // Duplicate match for analytics was here, consolidated above.
+    // Keeping this if analytics are top-level collection too, but restrictive.
+    match /analytics_global/{analyticsId} {
+      allow read: if isAdmin();
+      allow write: if false; 
+    }
+    
+    match /consent_audit_log/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only server
+    }
+    
+    match /privacy/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+    
+    // ============================================
+    // DEFAULT DENY
+    // ============================================
+    
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

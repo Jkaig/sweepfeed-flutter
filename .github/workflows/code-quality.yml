@@ -1,0 +1,125 @@
+name: Code Quality
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.19.0'
+        cache: true
+
+    - name: Get dependencies
+      run: flutter pub get
+
+    - name: Check for TODO comments
+      run: |
+        echo "Checking for TODO comments..."
+        TODO_COUNT=$(grep -r "TODO\|FIXME\|HACK" lib/ test/ || true | wc -l)
+        echo "Found $TODO_COUNT TODO/FIXME/HACK comments"
+        if [ $TODO_COUNT -gt 50 ]; then
+          echo "Too many TODO comments found ($TODO_COUNT). Please clean up before merging."
+          exit 1
+        fi
+
+    - name: Check file sizes
+      run: |
+        echo "Checking for large files..."
+        find lib/ -name "*.dart" -size +500k -ls || true
+        LARGE_FILES=$(find lib/ -name "*.dart" -size +500k | wc -l)
+        if [ $LARGE_FILES -gt 0 ]; then
+          echo "Large Dart files detected. Consider refactoring."
+          exit 1
+        fi
+
+    - name: Check line length
+      run: |
+        echo "Checking for long lines..."
+        LONG_LINES=$(grep -r "^.\{121,\}" lib/ test/ || true | wc -l)
+        echo "Found $LONG_LINES lines longer than 120 characters"
+        if [ $LONG_LINES -gt 10 ]; then
+          echo "Too many long lines found. Please follow line length guidelines."
+          exit 1
+        fi
+
+    - name: Dart analyzer
+      run: flutter analyze --fatal-infos --fatal-warnings
+
+    - name: Check formatting
+      run: dart format --set-exit-if-changed .
+
+    - name: Check imports
+      run: |
+        echo "Checking for unused imports..."
+        dart run dependency_validator
+
+    - name: Security lint
+      run: |
+        echo "Running security lints..."
+        # Check for hardcoded secrets
+        if grep -r "api[_-]key\|password\|secret" lib/ --include="*.dart" | grep -v "TODO\|FIXME\|comment"; then
+          echo "Potential hardcoded secrets found!"
+          exit 1
+        fi
+
+    - name: Performance lint
+      run: |
+        echo "Checking for performance anti-patterns..."
+        # Check for print statements in production code
+        PRINT_COUNT=$(grep -r "print(" lib/ --include="*.dart" || true | wc -l)
+        if [ $PRINT_COUNT -gt 0 ]; then
+          echo "Found $PRINT_COUNT print statements. Use logger instead."
+          exit 1
+        fi
+
+    - name: Comment PR with results
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+          
+          // Get analysis results
+          let comment = '## Code Quality Report\n\n';
+          
+          try {
+            const analyzeOutput = execSync('flutter analyze', { encoding: 'utf8' });
+            comment += '✅ **Dart Analysis**: Passed\n';
+          } catch (error) {
+            comment += '❌ **Dart Analysis**: Failed\n```\n' + error.stdout + '\n```\n';
+          }
+          
+          try {
+            const formatOutput = execSync('dart format --set-exit-if-changed .', { encoding: 'utf8' });
+            comment += '✅ **Code Formatting**: Passed\n';
+          } catch (error) {
+            comment += '❌ **Code Formatting**: Failed\n';
+          }
+          
+          // Add metrics
+          const todoCount = execSync("grep -r 'TODO\\|FIXME\\|HACK' lib/ test/ || true | wc -l", { encoding: 'utf8' }).trim();
+          comment += `📊 **TODOs**: ${todoCount}\n`;
+          
+          const lineCount = execSync("find lib/ -name '*.dart' -exec wc -l {} + | tail -1 | awk '{print $1}'", { encoding: 'utf8' }).trim();
+          comment += `📏 **Total Lines**: ${lineCount}\n`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });

@@ -1,0 +1,111 @@
+{
+  "@@locale": "en",
+  "appTitle": "SweepFeed",
+  "@appTitle": {
+    "description": "The title of the application"
+  },
+  "goodMorning": "Good morning, {name}!",
+  "@goodMorning": {
+    "description": "Morning greeting with user's name",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "John"
+      }
+    }
+  },
+  "forYou": "For You",
+  "@forYou": {
+    "description": "Label for personalized content toggle"
+  },
+  "myFilters": "My Filters",
+  "@myFilters": {
+    "description": "Label for saved filters dropdown"
+  },
+  "none": "None",
+  "@none": {
+    "description": "Option for no filter selected"
+  },
+  "loading": "Loading...",
+  "@loading": {
+    "description": "Loading indicator text"
+  },
+  "error": "Error",
+  "@error": {
+    "description": "Generic error text"
+  },
+  "manageFilters": "Manage Filters",
+  "@manageFilters": {
+    "description": "Button to manage saved filters"
+  },
+  "todaysChecklist": "Today's Checklist",
+  "@todaysChecklist": {
+    "description": "Section header for daily checklist"
+  },
+  "featuredToday": "Featured Today",
+  "@featuredToday": {
+    "description": "Section header for featured contests"
+  },
+  "browseCategories": "Browse Categories",
+  "@browseCategories": {
+    "description": "Section header for contest categories"
+  },
+  "latestContests": "Latest Contests",
+  "@latestContests": {
+    "description": "Section header for latest contests"
+  },
+  "viewAll": "View All",
+  "@viewAll": {
+    "description": "Button to view all items in a section"
+  },
+  "submitSweepstake": "Submit a Sweepstake",
+  "@submitSweepstake": {
+    "description": "Tooltip for floating action button"
+  },
+  "notInterested": "Not Interested",
+  "@notInterested": {
+    "description": "Action to hide a contest"
+  },
+  "contestHidden": "'{title}' hidden.",
+  "@contestHidden": {
+    "description": "Message when a contest is hidden",
+    "placeholders": {
+      "title": {
+        "type": "String",
+        "example": "Win $1000 Gift Card"
+      }
+    }
+  },
+  "undo": "Undo",
+  "@undo": {
+    "description": "Action to undo hiding a contest"
+  },
+  "errorLoadingFeaturedContests": "Error loading featured contests: {error}",
+  "@errorLoadingFeaturedContests": {
+    "description": "Error message for failed featured contests load",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Network error"
+      }
+    }
+  },
+  "errorLoadingLatestContests": "Error loading latest contests: {error}",
+  "@errorLoadingLatestContests": {
+    "description": "Error message for failed latest contests load",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Network error"
+      }
+    }
+  },
+  "errorLoadingCategories": "Error loading categories",
+  "@errorLoadingCategories": {
+    "description": "Error message for failed categories load"
+  },
+  "errorLoadingStats": "Error loading stats",
+  "@errorLoadingStats": {
+    "description": "Error message for failed stats load"
+  }
+}

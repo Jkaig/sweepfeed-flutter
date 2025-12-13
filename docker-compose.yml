@@ -1,0 +1,16 @@
+version: '3.8'
+services:
+  firebase:
+    image: google/cloud-sdk:latest
+    ports:
+      - "4000:4000"  # UI
+      - "8080:8080"  # Firestore
+      - "9099:9099"  # Auth
+      - "9199:9199"  # Storage
+    volumes:
+      - ./firebase-data:/root/.config/gcloud
+    command: >
+      bash -c "gcloud emulators firestore start --host-port=0.0.0.0:8080 & 
+               gcloud beta emulators auth start --host-port=0.0.0.0:9099 & 
+               gcloud beta emulators storage start --host-port=0.0.0.0:9199 & 
+               sleep infinity"

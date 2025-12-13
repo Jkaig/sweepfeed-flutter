@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gma-ad-services-config xmlns:gma="https://www.gstatic.com/hostedservice/gma_android_sdk_config">
+    <!-- Delay app measurement until MobileAds.initialize() is called. -->
+    <gma:delay-app-measurement-init value="true"/>
+</gma-ad-services-config>
