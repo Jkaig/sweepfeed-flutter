@@ -120,22 +120,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _navigate() async {
     if (!mounted) return;
 
-    final prefsAsync = ref.read(sharedPreferencesProvider);
-    final prefs = prefsAsync.value;
-    final hasSeenWelcomeScreen = prefs?.getBool('hasSeenWelcomeScreen') ?? false;
-
-    if (!hasSeenWelcomeScreen) {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          PageTransitions.fadeTransition(
-            page: const AdaptiveOnboardingWrapper(),
-            duration: const Duration(milliseconds: 800),
-          ),
-        );
-      }
-      return;
-    }
-
+    // Try biometric authentication first if enabled
     final biometricService = BiometricAuthService();
     final isBiometricsEnabled = await biometricService.isBiometricsEnabled();
 
@@ -150,15 +135,19 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       }
     }
 
+    // Check current user from Firebase Auth
     final user = ref.read(authStateChangesProvider).value ??
         FirebaseAuth.instance.currentUser;
 
     Widget nextScreen;
 
     if (user == null) {
+      // No user - go to auth/login
+      logger.i('No user found, navigating to AuthWrapper');
       nextScreen = const AuthWrapper();
     } else {
-      // Logged in, check onboarding status with timeout to prevent freeze
+      // User is logged in - check onboarding status from Firestore
+      logger.i('User ${user.uid} found, checking onboarding status');
       try {
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
@@ -167,26 +156,27 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
             .timeout(
               const Duration(seconds: 5),
               onTimeout: () {
-                logger.w('Firestore timeout, defaulting to AuthWrapper');
+                logger.w('Firestore timeout checking onboarding status');
                 throw TimeoutException('Firestore fetch timed out');
               },
             );
-        var onboardingCompleted = false;
-        if (userDoc.exists &&
+        
+        final onboardingCompleted = userDoc.exists &&
             userDoc.data() != null &&
-            userDoc.data()!.containsKey('onboardingCompleted')) {
-          onboardingCompleted = userDoc.data()!['onboardingCompleted'] as bool;
-        } else {
-          // If field doesn't exist, assume onboarding is not completed.
-        }
+            (userDoc.data()!['onboardingCompleted'] as bool? ?? false);
+
+        logger.i('User ${user.uid} onboardingCompleted: $onboardingCompleted');
 
         if (onboardingCompleted) {
+          // Onboarding complete - go to main app via AuthWrapper
           nextScreen = const AuthWrapper();
         } else {
+          // Onboarding not complete - show onboarding
+          logger.i('User ${user.uid} needs onboarding');
           nextScreen = const AdaptiveOnboardingWrapper();
         }
       } catch (e) {
-        // Error fetching user data, fallback to login/auth wrapper
+        // Error fetching user data - default to AuthWrapper which will handle state
         logger.w('Error fetching user data: $e, defaulting to AuthWrapper');
         nextScreen = const AuthWrapper();
       }

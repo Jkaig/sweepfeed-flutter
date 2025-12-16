@@ -21,6 +21,23 @@ class GlassSettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassmorphicContainer(
+      linearGradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withValues(alpha: 0.1),
+          Colors.white.withValues(alpha: 0.05),
+        ],
+      ),
+      borderGradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withValues(alpha: 0.2),
+          Colors.white.withValues(alpha: 0.1),
+        ],
+      ),
+      borderRadius: 20.0,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),

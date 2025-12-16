@@ -41,6 +41,8 @@ class InventoryScreen extends ConsumerWidget {
               icon: Icons.inventory_2_outlined,
               title: 'Empty Inventory',
               message: "You haven't purchased any items yet.\nVisit the shop to get started!",
+              useDustBunny: true,
+              dustBunnyImage: 'assets/images/dustbunnies/dustbunny_icon.png',
             );
           }
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/utils/logger.dart';
 import '../../navigation/screens/main_navigation_wrapper.dart';
 
 class ImprovedOnboardingFlow extends ConsumerStatefulWidget {
@@ -49,6 +50,22 @@ class _ImprovedOnboardingFlowState
           .collection('users')
           .doc(userId)
           .update({'onboardingCompleted': true});
+
+      // Verify the update was successful
+      final verifyDoc = await ref
+          .read(firebaseServiceProvider)
+          .firestore
+          .collection('users')
+          .doc(userId)
+          .get();
+      final verified = verifyDoc.data()?['onboardingCompleted'] as bool? ?? false;
+      
+      if (!verified) {
+        logger.e('Failed to save onboardingCompleted flag for user $userId');
+        // Continue anyway - user can retry
+      } else {
+        logger.i('Successfully saved onboardingCompleted=true for user $userId');
+      }
 
       if (mounted) {
         Navigator.of(context).pushReplacement(

@@ -50,7 +50,7 @@ class GamificationScreen extends StatelessWidget {
               ),
               const SizedBox(height: OnboardingConstants.verticalSpacingMedium),
               Text(
-                'Earn points, climb leaderboards, and unlock achievements!',
+                'Earn DustBunnies, climb leaderboards, and unlock achievements!',
                 style: AppTextStyles.titleMedium.copyWith(
                   color: AppColors.textLight,
                 ),

@@ -43,6 +43,8 @@ class TransactionHistoryScreen extends ConsumerWidget {
               icon: Icons.history,
               title: 'No Transactions',
               message: 'Your transaction history will appear here.',
+              useDustBunny: true,
+              dustBunnyImage: 'assets/images/dustbunnies/dustbunny_icon.png',
             );
           }
 

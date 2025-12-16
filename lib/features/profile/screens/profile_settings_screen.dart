@@ -12,6 +12,7 @@ import '../../../core/models/user_model.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/services/user_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/logger.dart';
 import '../../../core/widgets/custom_app_bar.dart';
 import '../../../core/widgets/custom_back_button.dart';
 import '../../reminders/screens/reminder_settings_screen.dart';
@@ -86,31 +87,40 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
   }
 
   Future<void> _pickImage() async {
-    // requesting permission
-    final status = await Permission.photos.request();
-    
-    if (status.isPermanentlyDenied) {
-      if (mounted) {
-        _showPermissionSettingsDialog();
-      }
-      return;
-    }
-
-    // On Android 13+ (SDK 33), photos permission might be separate or part of media.
-    // permission_handler handles this mostly, but if it returns denied (and not permanently),
-    // we might still try to pick image as ImagePicker handles some rationale.
-    // However, if we want to be strict:
-    if (status.isDenied) {
-      // Logic for generic denial? 
-      // For now, let's try to proceed if not permanently denied, 
-      // as ImagePicker might trigger its own request or fallback.
-      // But if we want to enforce routing:
-      // return; 
-    }
-
     try {
+      // Check permission status first
+      final status = await Permission.photos.status;
+      
+      if (status.isDenied || status.isRestricted) {
+        // Request permission
+        final newStatus = await Permission.photos.request();
+        if (newStatus.isPermanentlyDenied) {
+          if (mounted) {
+            _showPermissionSettingsDialog();
+          }
+          return;
+        }
+        if (newStatus.isDenied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Photo access is required to upload a profile picture'),
+                backgroundColor: AppColors.errorRed,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // Try to pick image - ImagePicker will handle its own permission requests on iOS
       final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 90,
+      );
 
       if (pickedFile != null) {
         setState(() {
@@ -118,8 +128,20 @@ class _ProfileSettingsScreenState extends ConsumerState<ProfileSettingsScreen> {
         });
       }
     } catch (e) {
-      // ImagePicker might throw if permission issues persist
-      print('Error picking image: $e');
+      logger.e('Error picking image: $e');
+      if (mounted) {
+        // Check if it's a permission error
+        if (e.toString().contains('permission') || e.toString().contains('denied')) {
+          _showPermissionSettingsDialog();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error selecting image: ${e.toString()}'),
+              backgroundColor: AppColors.errorRed,
+            ),
+          );
+        }
+      }
     }
   }
 

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -73,17 +74,37 @@ class _ProfileSetupStepScreenState
   }
 
   Future<void> _pickImage() async {
-    final status = await Permission.photos.request();
-
-    if (status.isPermanentlyDenied) {
-      if (mounted) {
-        _showPermissionSettingsDialog();
-      }
-      return;
-    }
-
     try {
+      // Try to pick image first - ImagePicker handles permissions on iOS
+      // On Android 13+, we need to request permission explicitly
       final picker = ImagePicker();
+      
+      // Check permission status first
+      final status = await Permission.photos.status;
+      
+      if (status.isDenied || status.isRestricted) {
+        // Request permission
+        final newStatus = await Permission.photos.request();
+        if (newStatus.isPermanentlyDenied) {
+          if (mounted) {
+            _showPermissionSettingsDialog();
+          }
+          return;
+        }
+        if (newStatus.isDenied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Photo access is required to upload a profile picture'),
+                backgroundColor: AppColors.errorRed,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // Try to pick image - ImagePicker will handle its own permission requests on iOS
       final pickedFile = await picker.pickImage(
         source: ImageSource.gallery,
         maxWidth: 512,
@@ -98,6 +119,19 @@ class _ProfileSetupStepScreenState
       }
     } catch (e) {
       logger.w('Error picking image: $e');
+      if (mounted) {
+        // Check if it's a permission error
+        if (e.toString().contains('permission') || e.toString().contains('denied')) {
+          _showPermissionSettingsDialog();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error selecting image: ${e.toString()}'),
+              backgroundColor: AppColors.errorRed,
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -174,25 +208,63 @@ class _ProfileSetupStepScreenState
       String? photoUrl;
       if (_profileImage != null) {
         // User selected a new image - upload it (highest priority)
-        photoUrl = await profileService.uploadProfilePicture(
-          user.uid,
-          _profileImage!,
-        );
+        try {
+          photoUrl = await profileService.uploadProfilePicture(
+            user.uid,
+            _profileImage!,
+          );
+          
+          if (photoUrl == null) {
+            logger.w('Profile picture upload returned null - file may be too large or invalid');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Profile picture upload failed. Please try a different image.'),
+                  backgroundColor: AppColors.errorRed,
+                ),
+              );
+            }
+          }
+        } catch (e) {
+          logger.e('Error uploading profile picture: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Error uploading profile picture: $e'),
+                backgroundColor: AppColors.errorRed,
+              ),
+            );
+          }
+        }
       }
 
       // Update User Profile
-      final updates = {
+      final updates = <String, dynamic>{
         'name': _displayNameController.text.trim(),
         'bio': _bioController.text.trim(),
       };
 
-      if (photoUrl != null) {
+      if (photoUrl != null && photoUrl.isNotEmpty) {
         updates['profilePictureUrl'] = photoUrl;
+        logger.i('Profile picture saved: $photoUrl');
+      } else if (_profileImage != null) {
+        // Photo was selected but upload failed - still save other data
+        logger.w('Profile picture was selected but upload failed - continuing without photo');
       }
 
       await _userService.updateUserProfile(user.uid, updates);
+      
+      // Verify the update was successful
+      final verifyDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final savedName = verifyDoc.data()?['name'] as String?;
+      if (savedName != _displayNameController.text.trim()) {
+        logger.w('Profile update verification failed - name mismatch');
+      }
 
-      // Award bonus points if photo was uploaded
+      // Award bonus DustBunnies if photo was uploaded
       if (_profileImage != null) {
          try {
            await ref.read(dustBunniesServiceProvider).awardDustBunnies(
@@ -305,7 +377,7 @@ class _ProfileSetupStepScreenState
             if (_profileImage == null) ...[
               const SizedBox(height: 12),
               Text(
-                'Add a photo for +25 bonus points!',
+                'Add a photo for +25 DustBunnies!',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.brandCyan,
                   fontWeight: FontWeight.w600,

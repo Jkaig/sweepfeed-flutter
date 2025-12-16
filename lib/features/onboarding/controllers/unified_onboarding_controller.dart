@@ -270,6 +270,7 @@ class _UnifiedOnboardingControllerState
     }
   }
 
+  /// Skip charity selection - user keeps 100% of ad revenue
   Future<void> _skipCharitySelection() async {
     if (_isLoading || !mounted) return;
 
@@ -342,17 +343,51 @@ class _UnifiedOnboardingControllerState
 
       if (!mounted) return;
 
-      // Save onboarding completion data
+      // Save onboarding completion data - use update to ensure field is set
+      // First, get current dustBunnies values to properly increment
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      
+      final currentDB = (userDoc.data()?['dustBunniesSystem']?['currentDB'] as num?)?.toInt() ?? 0;
+      final totalDB = (userDoc.data()?['dustBunniesSystem']?['totalDB'] as num?)?.toInt() ?? 0;
+      
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .update({
         'onboardingCompleted': true,
-        'points': FieldValue.increment(widget.config.welcomeBonusPoints),
+        'dustBunniesSystem.currentDB': currentDB + widget.config.welcomeBonusPoints,
+        'dustBunniesSystem.totalDB': totalDB + widget.config.welcomeBonusPoints,
         'onboardingCompletedAt': FieldValue.serverTimestamp(),
         'onboardingConfig': widget.config.steps.map((s) => s.name).toList(),
         'onboardingDuration': DateTime.now().millisecondsSinceEpoch,
       });
+      
+      // Verify the update was successful
+      final verifyDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final verified = verifyDoc.data()?['onboardingCompleted'] as bool? ?? false;
+      
+      if (!verified) {
+        logger.e('Failed to save onboardingCompleted flag for user ${user.uid}');
+        throw Exception('Failed to save onboarding completion status');
+      }
+      
+      logger.i('Successfully saved onboardingCompleted=true for user ${user.uid}');
+
+      // Force refresh auth state to pick up onboarding completion
+      // This ensures the app immediately recognizes the user has completed onboarding
+      try {
+        await ref.read(authServiceProvider).refreshAuthState();
+        logger.i('Auth state refreshed after onboarding completion');
+      } catch (e) {
+        logger.w('Failed to refresh auth state after onboarding: $e');
+        // Continue anyway - auth state will update on next app restart
+      }
 
       if (!mounted) return;
 
@@ -372,7 +407,7 @@ class _UnifiedOnboardingControllerState
       );
 
       logger.i(
-        'Onboarding completed for user ${user.uid}, awarded ${widget.config.welcomeBonusPoints} points',
+        'Onboarding completed for user ${user.uid}, awarded ${widget.config.welcomeBonusPoints} DustBunnies',
       );
 
       if (mounted) {
@@ -501,7 +536,7 @@ class _UnifiedOnboardingControllerState
                 .uploadProfilePicture(userId, imageFile);
             updates['profilePictureUrl'] = photoUrl;
 
-            // Award bonus points for profile photo
+            // Award bonus DustBunnies for profile photo
             try {
               await ref.read(dustBunniesServiceProvider).awardDustBunnies(
                     userId: userId,
@@ -509,7 +544,7 @@ class _UnifiedOnboardingControllerState
                     customAmount: 25,
                   );
             } catch (_) {
-              // Ignore point award errors
+              // Ignore DustBunnies award errors
             }
           }
         } catch (e) {
@@ -627,9 +662,7 @@ class _UnifiedOnboardingControllerState
       case OnboardingStep.charitySelection:
         return CharitySelectionStepScreen(
           onNext: _nextStep,
-          onSkip: widget.config.canSkipSteps && currentStep.isSkippable
-              ? _skipStep
-              : null,
+          onSkip: _skipCharitySelection, // Always allow skipping charity selection
         );
       case OnboardingStep.authentication:
         return AuthenticationStepScreen(
@@ -683,8 +716,8 @@ class _UnifiedOnboardingControllerState
                   // Header with progress and skip button
                   if (widget.config.showProgressIndicator) _buildHeader(),
     
-                  // Main content
-                  Expanded(
+                  // Main content - use Flexible instead of Expanded to allow content to size itself
+                  Flexible(
                     child: _buildCurrentStep(),
                   ),
                 ],

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
+import '../../../core/utils/logger.dart';
 
 enum AuthState {
   authenticated,
@@ -15,11 +16,19 @@ enum AuthState {
 
 class AuthService {
   AuthService(this._ref) {
+    // Listen to auth state changes and update accordingly
     _authStateChangesSubscription =
         _ref.read(firebaseAuthProvider).authStateChanges().listen((user) {
       _user = user;
       _updateAuthState();
     });
+    
+    // Also check initial state if user is already logged in
+    final currentUser = _ref.read(firebaseAuthProvider).currentUser;
+    if (currentUser != null) {
+      _user = currentUser;
+      _updateAuthState();
+    }
   }
 
   final Ref _ref;
@@ -32,6 +41,11 @@ class AuthService {
       StateController(AuthState.loading);
 
   Stream<AuthState> get authState => _authStateController.stream;
+
+  /// Manually refresh the auth state (useful after onboarding completion)
+  Future<void> refreshAuthState() async {
+    await _updateAuthState();
+  }
 
   Future<void> _updateAuthState() async {
     if (_user == null) {
@@ -46,20 +60,26 @@ class AuthService {
           .doc(_user!.uid)
           .get();
 
-      if (userDoc.exists) {
-        final userData = userDoc.data();
-        final onboardingCompleted =
-            userData?['onboardingCompleted'] as bool? ?? false;
+      if (userDoc.exists && userDoc.data() != null) {
+        final userData = userDoc.data()!;
+        // Check onboardingCompleted field - default to false if not set
+        final onboardingCompleted = userData['onboardingCompleted'] as bool? ?? false;
+        
         if (onboardingCompleted) {
           _authStateController.state = AuthState.authenticated;
         } else {
+          // User exists but onboarding not completed
           _authStateController.state = AuthState.onboarding;
         }
       } else {
+        // User document doesn't exist yet - they need onboarding
         _authStateController.state = AuthState.onboarding;
       }
     } catch (e) {
-      _authStateController.state = AuthState.error;
+      // On error, default to authenticated to prevent onboarding loop
+      // But log the error for debugging
+      logger.w('Error checking auth state, defaulting to authenticated: $e');
+      _authStateController.state = AuthState.authenticated;
     }
   }
 

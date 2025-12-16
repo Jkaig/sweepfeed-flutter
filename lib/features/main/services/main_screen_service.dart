@@ -72,12 +72,29 @@ class MainScreenService {
                         fontSize: 16,
                       ),
                     ),
-                    Text(
-                      '+10 SweepPoints earned',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 14,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'assets/images/dustbunnies/dustbunny_icon.png',
+                          width: 16,
+                          height: 16,
+                          errorBuilder: (context, error, stackTrace) => const Icon(
+                            Icons.stars,
+                            size: 16,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          '+10 DB earned',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

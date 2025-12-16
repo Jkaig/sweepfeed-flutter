@@ -69,7 +69,7 @@ class RPGHeader extends StatelessWidget {
                       color: Colors.white, size: 20,),
                   const SizedBox(width: 8),
                   Text(
-                    'Level $totalLevel • $experiencePoints SP',
+                    'Level $totalLevel • $experiencePoints DB',
                     style: AppTextStyles.titleMedium.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,

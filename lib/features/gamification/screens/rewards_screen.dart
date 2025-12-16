@@ -43,7 +43,16 @@ class RewardsScreen extends ConsumerWidget {
           data: (user) {
              if (user == null) return const Center(child: Text('Please log in'));
              
-             final userPoints = user.points ?? 0;
+             // Get DustBunnies from dustBunniesSystem using FutureBuilder
+             return FutureBuilder<Map<String, dynamic>>(
+               future: ref.read(dustBunniesServiceProvider).getUserDustBunniesData(user.id),
+               builder: (context, snapshot) {
+                 if (snapshot.connectionState == ConnectionState.waiting) {
+                   return const Center(child: LoadingIndicator());
+                 }
+                 
+                 final dustBunniesData = snapshot.data ?? {};
+                 final userDustBunnies = (dustBunniesData['currentDB'] as int?) ?? 0;
 
              return rewardsAsync.when(
                loading: () => const Center(child: LoadingIndicator()),
@@ -55,7 +64,7 @@ class RewardsScreen extends ConsumerWidget {
                      
                      // Balance Header
                      SliverToBoxAdapter(
-                       child: _BalanceHeader(points: userPoints)
+                       child: _BalanceHeader(dustBunnies: userDustBunnies)
                            .animate().fadeIn().slideY(begin: -0.2),
                      ),
 
@@ -75,7 +84,7 @@ class RewardsScreen extends ConsumerWidget {
                            (context, index) {
                              final reward = rewards[index];
                              final isUnlocked = user.claimedRewards.contains(reward.id) ?? false;
-                             final canAfford = userPoints >= reward.points;
+                             final canAfford = userDustBunnies >= reward.points;
                              
                              return _HolographicRewardCard(
                                reward: reward,
@@ -92,6 +101,8 @@ class RewardsScreen extends ConsumerWidget {
                      const SliverToBoxAdapter(child: SizedBox(height: 40)),
                    ],
                  );
+               },
+             );
                },
              );
           },
@@ -145,9 +156,9 @@ class RewardsScreen extends ConsumerWidget {
 }
 
 class _BalanceHeader extends StatelessWidget {
-  final int points;
+  final int dustBunnies;
 
-  const _BalanceHeader({required this.points});
+  const _BalanceHeader({required this.dustBunnies});
 
   @override
   Widget build(BuildContext context) {
@@ -188,7 +199,7 @@ class _BalanceHeader extends StatelessWidget {
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   Text(
-                    points.toString(),
+                    dustBunnies.toString(),
                     style: AppTextStyles.displaySmall.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,

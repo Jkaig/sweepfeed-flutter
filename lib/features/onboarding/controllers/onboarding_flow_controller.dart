@@ -84,12 +84,25 @@ class _OnboardingFlowControllerState extends State<OnboardingFlowController> {
           .doc(user.uid)
           .update({
         'onboardingCompleted': true,
-        'points': FieldValue.increment(OnboardingConstants.welcomeBonusPoints),
+        'dustBunniesSystem.currentDB': FieldValue.increment(OnboardingConstants.welcomeBonusPoints),
+        'dustBunniesSystem.totalDB': FieldValue.increment(OnboardingConstants.welcomeBonusPoints),
         'onboardingCompletedAt': FieldValue.serverTimestamp(),
       });
 
+      // Verify the update was successful
+      final verifyDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final verified = verifyDoc.data()?['onboardingCompleted'] as bool? ?? false;
+      
+      if (!verified) {
+        logger.e('Failed to save onboardingCompleted flag for user ${user.uid}');
+        throw Exception('Failed to save onboarding completion status');
+      }
+
       logger.i(
-        'Onboarding completed for user ${user.uid}, awarded ${OnboardingConstants.welcomeBonusPoints} points',
+        'Onboarding completed for user ${user.uid}, awarded ${OnboardingConstants.welcomeBonusPoints} DustBunnies',
       );
 
       widget.onComplete();

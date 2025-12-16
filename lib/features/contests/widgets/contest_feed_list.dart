@@ -23,6 +23,8 @@ class ContestFeedList extends ConsumerWidget {
             icon: Icons.celebration,
             title: 'No Contests Available',
             message: 'New contests are added daily.\nCheck back soon!',
+            useDustBunny: true,
+            dustBunnyImage: 'assets/images/dustbunnies/dustbunny_sad.png',
           );
         }
 

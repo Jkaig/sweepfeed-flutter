@@ -26,7 +26,7 @@ import '../providers/home_search_provider.dart';
 import '../widgets/contest_feed_skeleton.dart';
 import '../widgets/empty_contest_state.dart';
 import '../widgets/filter_bottom_sheet.dart';
-import '../widgets/glassmorphic_tab_bar.dart';
+import '../../../core/widgets/glassmorphic_tab_bar.dart';
 import '../widgets/home_search_bar.dart';
 import '../widgets/popular_sweepstakes_list.dart';
 import '../widgets/search_suggestions.dart';
@@ -133,7 +133,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  void _showFilterSheet(BuildContext context) {
+  Future<void> _showFilterSheet(BuildContext context) async {
+    // Check if filter feature is unlocked
+    final unlockService = ref.read(featureUnlockServiceProvider);
+    final hasUnlockedFilter = await unlockService.hasUnlockedFeature('tool_filter_pro');
+    
+    if (!hasUnlockedFilter) {
+      // Show unlock dialog
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.primaryMedium,
+          title: const Text(
+            'Unlock Filters',
+            style: TextStyle(color: AppColors.textWhite),
+          ),
+          content: const Text(
+            'Purchase "Filter Pro" in the shop to unlock advanced filtering options',
+            style: TextStyle(color: AppColors.textLight),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const RewardsScreen(),
+                  ),
+                );
+              },
+              child: const Text('Go to Shop'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    
+    if (!mounted) return;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -239,51 +282,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                           ),
                         );
                       },
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 10),
+                      child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppColors.brandCyan.withOpacity(0.2),
-                              AppColors.electricBlue.withOpacity(0.2),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: AppColors.brandCyan.withOpacity(0.5),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.brandCyan.withOpacity(0.2),
-                              blurRadius: 8,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
                         child: Row(
                           children: [
                             Image.asset(
                               'assets/images/dustbunnies/dustbunny_icon.png',
-                              width: 24,
-                              height: 24, // Slightly larger icon
+                              width: 28,
+                              height: 28,
                             )
                             .animate(onPlay: (controller) => controller.repeat())
-                            .shimmer(duration: 2000.ms, delay: 5000.ms), // Subtle shimmer
+                            .shimmer(duration: 2000.ms, delay: 5000.ms),
                             const SizedBox(width: 8),
-                            Text(
-                              '${user?.points ?? 0}',
-                              style: AppTextStyles.labelMedium.copyWith(
-                                color: AppColors.brandCyan,
-                                fontWeight: FontWeight.bold,
-                                shadows: [
-                                  Shadow(
-                                    color: AppColors.brandCyan.withOpacity(0.5),
-                                    blurRadius: 4,
-                                  ),
-                                ],
+                            ref.watch(userDustBunniesBalanceProvider(user!.id)).when(
+                              data: (balance) => Text(
+                                '$balance',
+                                style: AppTextStyles.labelMedium.copyWith(
+                                  color: AppColors.brandCyan,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  shadows: [
+                                    Shadow(
+                                      color: AppColors.brandCyan.withValues(alpha: 0.5),
+                                      blurRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              loading: () => const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.brandCyan,
+                                ),
+                              ),
+                              error: (_, __) => const Text(
+                                '0',
+                                style: TextStyle(color: AppColors.brandCyan),
                               ),
                             ),
                           ],
@@ -483,7 +519,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       },
       loading: () => const ContestFeedSkeleton(),
       error: (error, stack) => Center(
-        child: Text('Error: $error'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Error: $error', style: const TextStyle(color: AppColors.errorRed)),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => ref.refresh(personalizedContestFeedProvider),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
       ),
     );
   }

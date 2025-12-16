@@ -89,9 +89,9 @@ service cloud.firestore {
       allow update: if isOwner(userId) && 
                        isValidUserId(userId) &&
                        // Prevent modification of critical fields by client (including SweepPoints and subscription data)
-                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['tier', 'premiumUntil', 'vipAccess', 'sweepPointsSystem', 'xpSystem', 'isSubscribed', 'subscriptionId', 'subscriptionPurchaseDate', 'subscriptionExpiryDate', 'subscriptionTier', 'subscriptionReceipt', 'trialStarted', 'trialStartDate', 'trialExpiryDate', 'cancellationRequested', 'tierUpdatedAt', 'lastPurchaseDate', 'subscriptionCancelledAt', 'subscriptionStatus', 'lastBillingIssueAt']) ||
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['tier', 'premiumUntil', 'vipAccess', 'isSubscribed', 'subscriptionId', 'subscriptionPurchaseDate', 'subscriptionExpiryDate', 'subscriptionTier', 'subscriptionReceipt', 'trialStarted', 'trialStartDate', 'trialExpiryDate', 'cancellationRequested', 'tierUpdatedAt', 'lastPurchaseDate', 'subscriptionCancelledAt', 'subscriptionStatus', 'lastBillingIssueAt']) ||
                        // Allow modification of notification settings only
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notificationSettings', 'encryptedFcmToken', 'fcmTokenHash', 'fcmTokenUpdatedAt', 'encryptionVersion', 'tokenSecurityLevel']);
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notificationSettings', 'encryptedFcmToken', 'fcmTokenHash', 'fcmTokenUpdatedAt', 'encryptionVersion', 'tokenSecurityLevel', 'dustBunniesSystem', 'sweepPointsSystem', 'xpSystem', 'lastDBGain', 'lastSPGain', 'gamificationServiceMigrated', 'dustBunniesServiceVersion']);
       
       allow delete: if false; // Users cannot delete their own documents
       
@@ -122,25 +122,36 @@ service cloud.firestore {
         allow update, delete: if false; // History is immutable
       }
       
-      // SweepPoints history subcollection - audit trail protection
+      // DustBunnies history subcollection
+      match /dustBunniesHistory/{historyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         request.resource.data.keys().hasAll(['action', 'dustBunniesGained', 'newLevel', 'timestamp']);
+        allow update, delete: if false;
+      }
+
+      // SweepPoints history subcollection - legacy support
       match /sweepPointsHistory/{historyId} {
         allow read: if isOwner(userId);
-        allow create: if false; // Only server can create SP history entries
-        allow update, delete: if false; // History is immutable
+        allow create: if isOwner(userId); // Allowed for client migration logic
+        allow update, delete: if false;
       }
       
-      // Level-up rewards subcollection - prevent abuse
+      // Level-up rewards subcollection
       match /rewards/{rewardId} {
         allow read: if isOwner(userId);
         
-        // Users can only claim rewards (update "claimed" field from false to true)
+        // Users can claim rewards (update claimed field)
         allow update: if isOwner(userId) &&
                          request.resource.data.keys().hasOnly(['claimed']) &&
                          request.resource.data.claimed is bool &&
                          resource.data.claimed == false &&
                          request.resource.data.claimed == true;
         
-        allow create, delete: if false; // Only server can create/delete rewards
+        // Allow client to create rewards during level up
+        allow create: if isOwner(userId) &&
+                         request.resource.data.keys().hasAll(['level', 'rewards', 'claimed', 'timestamp']);
+        allow delete: if false;
       }
       
       // Saved contests subcollection - tier-based limits
@@ -174,6 +185,12 @@ service cloud.firestore {
                          request.resource.data.keys().hasAll(['name', 'filters', 'createdAt']);
         allow update: if isOwner(userId) && hasBasicOrHigher();
         allow delete: if isOwner(userId) && hasBasicOrHigher();
+      }
+
+      // User challenges subcollection - read-only for client (updates via Cloud Functions)
+      match /user_challenges/{challengeId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
       }
     }
 

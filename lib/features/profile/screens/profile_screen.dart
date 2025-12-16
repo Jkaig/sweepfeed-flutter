@@ -14,6 +14,7 @@ import '../../../core/theme/app_text_styles.dart';
 
 import '../../../core/widgets/custom_back_button.dart';
 import '../../../core/widgets/loading_indicator.dart';
+import '../../../core/widgets/primary_button.dart';
 import '../../charity/screens/donation_history_screen.dart';
 import '../../email/screens/email_inbox_screen.dart';
 import '../../email/services/email_service.dart';
@@ -38,10 +39,30 @@ class ProfileScreen extends ConsumerWidget {
     final currentTier = tierManagement.getCurrentTier();
 
     if (currentUser == null) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: AppColors.primaryDark,
         body: Center(
-          child: Text('Please log in.', style: AppTextStyles.bodyLarge),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.lock_outline, size: 64, color: AppColors.accent),
+              const SizedBox(height: 24),
+              const Text(
+                'Sign in to view your profile',
+                style: AppTextStyles.titleLarge,
+              ),
+              const SizedBox(height: 32),
+              PrimaryButton(
+                text: 'Sign In',
+                onPressed: () {
+                   // Navigate to login or show login modal
+                   // Assuming there is a named route or logic for this
+                   // For now just show a snackbar or similar if route unknown
+                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Navigate to Login')));
+                },
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -63,7 +84,21 @@ class ProfileScreen extends ConsumerWidget {
       ),
       body: userProfileAsync.when(
         loading: () => const Center(child: LoadingIndicator()),
-        error: (error, stack) => Center(child: Text('Error: $error')),
+        error: (error, stack) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+               const Icon(Icons.error_outline, size: 48, color: AppColors.errorRed),
+               const SizedBox(height: 16),
+               Text('Failed to load profile', style: AppTextStyles.bodyLarge.copyWith(color: AppColors.textLight)),
+               const SizedBox(height: 8),
+               TextButton(
+                 onPressed: () => ref.refresh(userProfileProvider),
+                 child: const Text('Retry'),
+               ),
+            ],
+          ),
+        ),
         data: (userProfile) {
           final profile = userProfile ??
               UserProfile(
@@ -73,36 +108,50 @@ class ProfileScreen extends ConsumerWidget {
                     .doc(currentUser.uid),
               );
 
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                _ParallaxHeader(user: profile, currentUser: currentUser),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 24),
-                      _BentoStatsGrid(user: profile, userId: currentUser.uid),
-                      const SizedBox(height: 24),
-                       Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Achievements',
-                          style: AppTextStyles.titleLarge.copyWith(color: Colors.white),
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight,
+                  ),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      children: [
+                        _ParallaxHeader(user: profile, currentUser: currentUser),
+                        Flexible(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(height: 24),
+                                _BentoStatsGrid(user: profile, userId: currentUser.uid),
+                                const SizedBox(height: 24),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'Achievements',
+                                    style: AppTextStyles.titleLarge.copyWith(color: Colors.white),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _BadgeCarousel(userId: currentUser.uid),
+                                const SizedBox(height: 24),
+                                _MenuSection(context: context),
+                                const SizedBox(height: 32),
+                                _SignOutButton(),
+                                const SizedBox(height: 40),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      _BadgeCarousel(userId: currentUser.uid),
-                      const SizedBox(height: 24),
-                      _MenuSection(context: context),
-                      const SizedBox(height: 32),
-                       _SignOutButton(),
-                      const SizedBox(height: 40),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           );
         },
       ),
@@ -183,149 +232,161 @@ class _ParallaxHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 400, // Increased height to accommodate progress bar
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Background Gradient
-          Positioned.fill(
-            child: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Color(0xFF2A2A40),
-                    AppColors.primaryDark,
-                  ],
-                ),
-              ),
-            ),
-          ),
-          
-          // Animated Circles Background
-          Positioned(
-            top: -50,
-            right: -50,
-            child: Container(
-              width: 200,
-              height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.brandCyan.withValues(alpha: 0.1),
-                boxShadow: [
-                   BoxShadow(
-                     color: AppColors.brandCyan.withValues(alpha: 0.2),
-                     blurRadius: 100,
-                     spreadRadius: 20,
-                   )
-                ]
-              ),
-            ).animate(onPlay: (controller) => controller.repeat(reverse: true))
-             .scale(duration: 3.seconds, begin: const Offset(1,1), end: const Offset(1.2, 1.2)),
-          ),
-
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Use flexible height based on screen size
+        final headerHeight = constraints.maxHeight * 0.5;
+        final minHeight = 350.0;
+        final maxHeight = 450.0;
+        final calculatedHeight = headerHeight.clamp(minHeight, maxHeight);
+        
+        return SizedBox(
+          height: calculatedHeight,
+          child: Stack(
+            alignment: Alignment.center,
             children: [
-              const SizedBox(height: 40), // Adjusted top spacer
-              // Avatar
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [AppColors.brandCyan, AppColors.electricBlue],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.brandCyan.withValues(alpha: 0.4),
-                      blurRadius: 20,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                ),
-                child: ProfilePictureAvatar(
-                  user: user,
-                  radius: 65,
-                ),
-              ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
-              
-              const SizedBox(height: 16),
-              Text(
-                currentUser.displayName ?? user.name ?? 'User',
-                style: AppTextStyles.headlineMedium.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      offset: const Offset(0, 2),
-                      blurRadius: 4,
-                    ),
-                  ],
-                ),
-              ).animate().fadeIn().slideY(begin: 0.3),
-              
-              const SizedBox(height: 4),
-              if (user.bio != null && user.bio!.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    user.bio!,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: Colors.white.withValues(alpha: 0.7),
+              // Background Gradient
+              Positioned.fill(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xFF2A2A40),
+                        AppColors.primaryDark,
+                      ],
                     ),
                   ),
-                ).animate().fadeIn(delay: 200.ms),
-
-              const SizedBox(height: 20),
-              
-              // Level Progress Bar
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 48.0),
-                child: LevelProgressBar(
-                  currentLevel: user.level,
-                  currentDB: user.points, // Assuming points maps to currentDB in UserProfile
-                  // In a real scenario, you might need to fetch dbToNextLevel from the service 
-                  // or calculate it. For now, we'll approximate/calculate using the service static method.
-                  dbToNextLevel: DustBunniesService.getDustBunniesRequiredForLevel(user.level + 1) - DustBunniesService.getDustBunniesRequiredForLevel(user.level),
-                  // Since 'points' is usually total, we'd ideally want 'current progress in this level'.
-                  // However, for visual simplicity let's stick to this or assume UserProfile has granular fields.
-                  // BETTER: Use mapped values if available, or just raw total points for now.
-                  // FIX: Let's assume UserProfile model has been updated to have these gamification fields 
-                  // properly, OR we calculate locally. 
-                  // For the sake of this task, I will use a safe fallback or calculation.
-                  // *Correction*: DustBunniesService logic defines dbToNextLevel.
-                  // Accessing static DustBunniesService logic for calculation:
-                  rank: user.rankTitle, // UserProfile has rankTitle
                 ),
               ),
+              
+              // Animated Circles Background
+              Positioned(
+                top: -50,
+                right: -50,
+                child: Container(
+                  width: 200,
+                  height: 200,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.brandCyan.withValues(alpha: 0.1),
+                    boxShadow: [
+                       BoxShadow(
+                         color: AppColors.brandCyan.withValues(alpha: 0.2),
+                         blurRadius: 100,
+                         spreadRadius: 20,
+                       )
+                    ]
+                  ),
+                ).animate(onPlay: (controller) => controller.repeat(reverse: true))
+                 .scale(duration: 3.seconds, begin: const Offset(1,1), end: const Offset(1.2, 1.2)),
+              ),
 
-              const SizedBox(height: 20),
-              // Action Chips (Edit, Share) example
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                   _HeaderChip(
-                     label: 'Edit Profile', 
-                     icon: Icons.edit,
-                     onTap: () => Navigator.of(context).push(
-                       MaterialPageRoute(builder: (_) => const ProfileSettingsScreen())
-                     ),
-                   ),
-                ],
-              ).animate().fadeIn(delay: 300.ms),
+              SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 40),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Avatar
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [AppColors.brandCyan, AppColors.electricBlue],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.brandCyan.withValues(alpha: 0.4),
+                              blurRadius: 20,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: ProfilePictureAvatar(
+                          user: user,
+                          radius: 65,
+                        ),
+                      ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
+                      
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          currentUser.displayName ?? user.name ?? 'User',
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.headlineMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                offset: const Offset(0, 2),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ).animate().fadeIn().slideY(begin: 0.3),
+                      
+                      const SizedBox(height: 4),
+                      if (user.bio != null && user.bio!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: Text(
+                            user.bio!,
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: Colors.white.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ).animate().fadeIn(delay: 200.ms),
+
+                      const SizedBox(height: 16),
+                      
+                      // Level Progress Bar
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                        child: LevelProgressBar(
+                          currentLevel: user.level,
+                          currentDB: ref.watch(userDustBunniesBalanceProvider(userId)).valueOrNull ?? 0,
+                          dbToNextLevel: DustBunniesService.getDustBunniesRequiredForLevel(user.level + 1) - DustBunniesService.getDustBunniesRequiredForLevel(user.level),
+                          rank: user.rankTitle,
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+                      // Action Chips (Edit, Share) example
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                           _HeaderChip(
+                             label: 'Edit Profile', 
+                             icon: Icons.edit,
+                             onTap: () => Navigator.of(context).push(
+                               MaterialPageRoute(builder: (_) => const ProfileSettingsScreen())
+                             ),
+                           ),
+                        ],
+                      ).animate().fadeIn(delay: 300.ms),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -378,17 +439,24 @@ class _BentoStatsGrid extends ConsumerWidget {
     final userRankAsync = ref.watch(userRankProvider(userId));
     
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           children: [
             Expanded(
               flex: 2,
-              child: _BentoCard(
-                title: 'Dustbunnies',
-                value: user.points.toString(),
-                icon: Icons.stars_rounded,
-                color: AppColors.brandCyan,
-                imageUrl: 'assets/images/dustbunnies/dustbunny_icon.png',
+              child: Consumer(
+                builder: (context, ref, child) {
+                  final dustBunniesAsync = ref.watch(userDustBunniesBalanceProvider(userId));
+                  final dustBunnies = dustBunniesAsync.valueOrNull ?? 0;
+                  return _BentoCard(
+                    title: 'Dustbunnies',
+                    value: dustBunnies.toString(),
+                    icon: Icons.stars_rounded,
+                    color: AppColors.brandCyan,
+                    imageUrl: 'assets/images/dustbunnies/dustbunny_icon.png',
+                  );
+                },
               ),
             ),
             const SizedBox(width: 12),
@@ -637,6 +705,7 @@ class _MenuSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         _MenuTile(
           icon: Icons.star_rate_rounded,

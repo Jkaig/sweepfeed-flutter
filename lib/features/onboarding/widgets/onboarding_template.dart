@@ -27,9 +27,21 @@ class OnboardingTemplate extends StatelessWidget {
         ),
       ),
       child: SafeArea(
-        child: Padding(
-          padding: padding,
-          child: child,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight,
+                ),
+                child: Padding(
+                  padding: padding,
+                  child: child,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/providers.dart';
 import '../../ads/widgets/admob_banner.dart';
 import '../../gamification/screens/daily_check_in_screen.dart';
-import '../../subscription/widgets/active_trial_banner.dart';
-import '../../subscription/widgets/trial_banner.dart';
 import 'main_navigation_wrapper.dart';
 
 class MainScreen extends ConsumerStatefulWidget {
@@ -72,23 +70,18 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
     final subscriptionService = ref.watch(subscriptionServiceProvider);
 
     return Scaffold(
-      body: Column(
-        children: [
-          // Show trial banner based on subscription status
-          if (!subscriptionService.isSubscribed &&
-              !subscriptionService.isInTrialPeriod)
-            const TrialBanner(),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Main content
+            const Expanded(child: MainNavigationWrapper()),
 
-          // Show active trial banner for users in trial period
-          if (subscriptionService.isInTrialPeriod) const ActiveTrialBanner(),
-
-          // Main content
-          const Expanded(child: MainNavigationWrapper()),
-
-          // Ad banner at the bottom for free users
-          if (!subscriptionService.isSubscribed)
-            const AdMobBanner(),
-        ],
+            // Ad banner at the bottom for free users
+            if (!subscriptionService.isSubscribed)
+              const AdMobBanner(),
+          ],
+        ),
       ),
     );
   }

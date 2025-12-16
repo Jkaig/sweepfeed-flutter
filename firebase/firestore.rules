@@ -121,17 +121,35 @@ service cloud.firestore {
         // Note: 'createdAt' and 'email' are allowed to be sent in updates via merge
         // as long as the values match existing data (handled by merge behavior)
         let protectedFields = ['id', 'tier', 'premiumUntil', 'vipAccess',
-                              'sweepPointsSystem', 'xpSystem', 'isSubscribed', 'subscriptionId',
+                              'isSubscribed', 'subscriptionId',
                               'subscriptionPurchaseDate', 'subscriptionExpiryDate', 'subscriptionTier',
                               'subscriptionReceipt', 'trialStarted', 'trialStartDate', 'trialExpiryDate',
                               'cancellationRequested', 'tierUpdatedAt', 'lastPurchaseDate',
                               'subscriptionCancelledAt', 'subscriptionStatus', 'lastBillingIssueAt'];
+        // Note: sweepPointsSystem and xpSystem are DEPRECATED but still allowed for backward compatibility during migration
         let modifiedFields = request.resource.data.diff(resource.data).affectedKeys();
+
+        // Allow dustBunniesSystem updates (for awarding DustBunnies, daily login bonuses, etc.)
+        // But validate the structure to prevent abuse
+        // Note: dustBunniesSystem is NOT in protectedFields, so it's allowed by default
+        // We just need to validate its structure if it's being modified
+        let dustBunniesData = request.resource.data.get('dustBunniesSystem', {});
+        let validDustBunniesUpdate = !modifiedFields.hasAny(['dustBunniesSystem']) ||
+          (dustBunniesData is map &&
+           (!dustBunniesData.keys().hasAny(['currentDB']) || 
+            (dustBunniesData.currentDB is number && dustBunniesData.currentDB >= 0 && dustBunniesData.currentDB <= 1000000)) &&
+           (!dustBunniesData.keys().hasAny(['totalDB']) || 
+            (dustBunniesData.totalDB is number && dustBunniesData.totalDB >= 0 && dustBunniesData.totalDB <= 10000000)));
+
+        // Allow charity selection updates - these fields are not protected, so they're allowed by default
+        // Charity fields: selectedCharityId, selectedCharityIds, selectedNonprofitSlug, selectedNonprofits, pendingCharities
+        // No special validation needed - users should be able to change their charity selection freely
 
         // Check for disallowed field modifications
         // Allow createdAt/email to be in request if unchanged (merge behavior)
         // Also ensure that if displayName or bio are modified, they are valid
-        return !modifiedFields.hasAny(protectedFields) &&
+        return validDustBunniesUpdate &&
+               !modifiedFields.hasAny(protectedFields) &&
                (!modifiedFields.hasAny(['displayName']) ||
                 (request.resource.data.displayName is string &&
                  request.resource.data.displayName.size() >= 2 &&
@@ -185,6 +203,17 @@ service cloud.firestore {
         allow read: if isOwner(userId);
         allow create: if isOwner(userId) &&
           request.resource.data.keys().hasAll(['contestId', 'enteredAt']);
+        allow update, delete: if false; // Immutable
+      }
+      
+      // Streak history (for tracking daily check-ins and streaks)
+      match /streakHistory/{historyId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          request.resource.data.keys().hasAll(['currentStreak', 'timestamp']) &&
+          request.resource.data.currentStreak is number &&
+          request.resource.data.currentStreak >= 0 &&
+          request.resource.data.currentStreak <= 10000; // Reasonable max streak
         allow update, delete: if false; // Immutable
       }
       
@@ -329,6 +358,26 @@ service cloud.firestore {
         allow create: if isOwner(userId) && 
           request.resource.data.keys().hasAll(['contestId', 'trackedAt', 'endDate']);
         allow update: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+      
+      // User daily challenges
+      match /user_challenges/{challengeId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          request.resource.data.keys().hasAll(['challengeId', 'assignedAt', 'completedAt']);
+        allow update: if isOwner(userId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['completedAt', 'progress']);
+        allow delete: if false; // Immutable
+      }
+      
+      // Friend requests
+      match /friend_requests/{requestId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          request.resource.data.keys().hasAll(['fromUserId', 'toUserId', 'status', 'createdAt']);
+        allow update: if isOwner(userId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt']);
         allow delete: if isOwner(userId);
       }
       

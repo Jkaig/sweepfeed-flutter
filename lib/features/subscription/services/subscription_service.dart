@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
+import '../../../core/providers/providers.dart';
 import '../models/subscription_plan.dart';
 import '../models/subscription_tiers.dart';
 import 'revenue_cat_service.dart';
@@ -92,6 +93,14 @@ class SubscriptionService with ChangeNotifier {
     notifyListeners();
 
     try {
+      // Ensure RevenueCat is initialized
+      final currentUser = _ref.read(firebaseAuthProvider).currentUser;
+      if (currentUser != null) {
+        await _revenueCatService.initialize(currentUser.uid);
+      } else {
+        throw Exception('User must be logged in to purchase subscription');
+      }
+      
       final offerings = await _revenueCatService.getOfferings();
       if (offerings == null || offerings.current == null) {
         throw Exception('No offerings available');
@@ -177,5 +186,37 @@ class SubscriptionService with ChangeNotifier {
       return '${remaining.inHours} hours';
     }
     return 'Less than an hour';
+  }
+  
+  /// Check if user is eligible for a free trial
+  /// A user is eligible if they're not subscribed, not in a trial, and RevenueCat offers a trial package
+  Future<bool> isTrialEligible() async {
+    if (_isSubscribed || isInTrialPeriod) {
+      return false;
+    }
+    
+    try {
+      final offerings = await _revenueCatService.getOfferings();
+      if (offerings?.current == null) {
+        return false;
+      }
+      
+      // Check if any package has a trial period available
+      // RevenueCat automatically filters out packages with trials if user has already used one
+      final packages = offerings!.current!.availablePackages;
+      for (final package in packages) {
+        // If RevenueCat offers a package, and user hasn't used trial, it will include trial info
+        // We can check if the package's product has an introductory price (trial)
+        final product = package.storeProduct;
+        if (product.introductoryPrice != null) {
+          return true;
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      // If we can't determine, assume not eligible to be safe
+      return false;
+    }
   }
 }

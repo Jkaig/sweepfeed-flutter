@@ -108,7 +108,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   Semantics(
                     label: _hasPhoto
                         ? 'Profile photo uploaded. Tap to change.'
-                        : 'Upload profile photo. Earn 25 bonus points!',
+                        : 'Upload profile photo. Earn 25 DustBunnies!',
                     button: true,
                     child: Center(
                       child: GestureDetector(
@@ -200,7 +200,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                                 color: Colors.amber, size: 20,),
                             const SizedBox(width: 8),
                             Text(
-                              '+25 Bonus Points!',
+                              '+25 DustBunnies!',
                               style: AppTextStyles.bodyMedium.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -212,7 +212,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     )
                   else
                     Text(
-                      'Add a photo for +25 bonus points!',
+                      'Add a photo for +25 DustBunnies!',
                       style: AppTextStyles.bodyMedium.copyWith(
                         color: AppColors.brandCyan,
                         fontWeight: FontWeight.w600,

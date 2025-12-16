@@ -131,7 +131,7 @@ class SecureConfig {
     final key = dotenv.env['REVENUECAT_ANDROID_API_KEY'];
     if (key == null || key.isEmpty) {
       logger.w('RevenueCat Android API key not configured');
-      return 'public_google_sdk_key'; // Fallback for development
+      return ''; // Return empty string instead of invalid key
     }
     return key;
   }
@@ -142,7 +142,7 @@ class SecureConfig {
     final key = dotenv.env['REVENUECAT_IOS_API_KEY'];
     if (key == null || key.isEmpty) {
       logger.w('RevenueCat iOS API key not configured');
-      return 'public_apple_sdk_key'; // Fallback for development
+      return ''; // Return empty string instead of invalid key
     }
     return key;
   }

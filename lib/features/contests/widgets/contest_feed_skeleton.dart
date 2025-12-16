@@ -63,9 +63,9 @@ class _SkeletonCard extends StatelessWidget {
             // Image Placeholder
             Container(
               height: 200,
-              decoration: const BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               ),
             ),
             Padding(
@@ -77,22 +77,42 @@ class _SkeletonCard extends StatelessWidget {
                   Container(
                     height: 24,
                     width: double.infinity,
-                    color: Colors.black,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   // Subtitle Placeholder
                   Container(
                     height: 16,
                     width: 150,
-                    color: Colors.black,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   // Metadata Placeholder
                   Row(
                     children: [
-                      Container(height: 20, width: 60, color: Colors.black),
+                      Container(
+                        height: 20, 
+                        width: 60, 
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
                       const SizedBox(width: 8),
-                      Container(height: 20, width: 60, color: Colors.black),
+                      Container(
+                        height: 20, 
+                        width: 60, 
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
                     ],
                   ),
                 ],

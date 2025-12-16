@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/sensory_feedback_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import 'dustbunny_icon.dart';
 
 class EmptyStateWidget extends StatelessWidget {
   const EmptyStateWidget({
@@ -13,6 +14,8 @@ class EmptyStateWidget extends StatelessWidget {
     this.actionText,
     this.onAction,
     this.semanticLabel,
+    this.useDustBunny = false,
+    this.dustBunnyImage,
   });
   final IconData icon;
   final String title;
@@ -20,6 +23,8 @@ class EmptyStateWidget extends StatelessWidget {
   final String? actionText;
   final VoidCallback? onAction;
   final String? semanticLabel;
+  final bool useDustBunny;
+  final String? dustBunnyImage;
 
   @override
   Widget build(BuildContext context) {
@@ -36,25 +41,36 @@ class EmptyStateWidget extends StatelessWidget {
             children: [
               Semantics(
                 label: 'Empty state icon',
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.brandCyan.withValues(alpha: 0.2),
-                        AppColors.primary.withValues(alpha: 0.1),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 48,
-                    color: AppColors.brandCyan.withValues(alpha: 0.6),
-                  ),
-                ),
+                child: useDustBunny || dustBunnyImage != null
+                    ? dustBunnyImage != null
+                        ? Image.asset(
+                            dustBunnyImage!,
+                            width: 64,
+                            height: 64,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const DustBunnyIcon(size: 64);
+                            },
+                          )
+                        : const DustBunnyIcon(size: 64)
+                    : Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [
+                              AppColors.brandCyan.withValues(alpha: 0.2),
+                              AppColors.primary.withValues(alpha: 0.1),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Icon(
+                          icon,
+                          size: 48,
+                          color: AppColors.brandCyan.withValues(alpha: 0.6),
+                        ),
+                      ),
               ),
               const SizedBox(height: 16),
               Text(

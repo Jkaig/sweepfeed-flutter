@@ -130,10 +130,28 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _notifications.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No notifications yet',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'assets/images/dustbunnies/dustbunny_icon.png',
+                          width: 64,
+                          height: 64,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Icon(
+                              Icons.notifications_off_outlined,
+                              size: 64,
+                              color: Colors.grey,
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No notifications yet',
+                          style: TextStyle(fontSize: 16, color: Colors.grey),
+                        ),
+                      ],
                     ),
                   )
                 : ListView.builder(

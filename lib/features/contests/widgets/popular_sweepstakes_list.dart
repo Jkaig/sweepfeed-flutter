@@ -4,6 +4,7 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../core/widgets/empty_state_widget.dart';
+import '../../../core/widgets/glassmorphic_container.dart';
 import 'unified_contest_card.dart';
 
 class PopularContestsList extends ConsumerWidget {
@@ -16,12 +17,36 @@ class PopularContestsList extends ConsumerWidget {
     return popularContests.when(
       data: (contests) {
         if (contests.isEmpty) {
-          return const SizedBox(
+          return SizedBox(
             height: 200,
-            child: EmptyStateWidget(
-              icon: Icons.trending_up,
-              title: 'No Popular Contests Yet',
-              message: 'Check back soon for trending contests!',
+            child: GlassmorphicContainer(
+              borderRadius: 16.0,
+              blur: 10,
+              alignment: Alignment.center,
+              border: 2,
+              linearGradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withOpacity(0.1),
+                  Colors.white.withOpacity(0.05),
+                ],
+              ),
+              borderGradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white.withOpacity(0.5),
+                  Colors.white.withOpacity(0.05),
+                ],
+              ),
+              child: const EmptyStateWidget(
+                icon: Icons.trending_up,
+                title: 'No Popular Contests Yet',
+                message: 'Check back soon for trending contests!',
+                useDustBunny: true,
+                dustBunnyImage: 'assets/images/dustbunnies/dustbunny_icon.png',
+              ),
             ),
           );
         }

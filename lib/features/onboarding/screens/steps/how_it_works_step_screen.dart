@@ -19,6 +19,7 @@ class HowItWorksStepScreen extends StatelessWidget {
   Widget build(BuildContext context) => OnboardingTemplate(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Main icon
           const Icon(

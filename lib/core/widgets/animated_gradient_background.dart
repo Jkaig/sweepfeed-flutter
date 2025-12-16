@@ -87,19 +87,42 @@ class _AnimatedGradientBackgroundState
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
-        return Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: _topAlignmentAnimation.value,
-              end: _bottomAlignmentAnimation.value,
-              colors: const [
-                AppColors.primaryDark,
-                Color(0xFF1A1A2E), // Deep purple-ish dark
-                AppColors.primaryMedium,
-              ],
+        return Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: _topAlignmentAnimation.value,
+                  end: _bottomAlignmentAnimation.value,
+                  colors: const [
+                    AppColors.primaryDark,
+                    Color(0xFF1A1A2E), // Deep purple-ish dark
+                    AppColors.primaryMedium,
+                  ],
+                ),
+              ),
+              child: widget.child,
             ),
-          ),
-          child: widget.child,
+            // Dark scrim at the top to prevent "weird glow" behind transparent AppBars
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 120,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.7),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );

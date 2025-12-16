@@ -4,13 +4,13 @@ import '../utils/logger.dart';
 class GamificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<void> awardPoints(String userId, int points) async {
+  Future<void> awardDustBunnies(String userId, int dustBunnies) async {
     try {
       await _firestore.collection('users').doc(userId).update({
-        'points': FieldValue.increment(points),
+        'dustBunniesBalance': FieldValue.increment(dustBunnies),
       });
     } catch (e) {
-      logger.e('Error awarding points', error: e);
+      logger.e('Error awarding dustbunnies', error: e);
     }
   }
 
@@ -24,10 +24,10 @@ class GamificationService {
     }
   }
 
-  Future<bool> claimReward(String userId, String rewardId, int points) async {
+  Future<bool> claimReward(String userId, String rewardId, int dustBunnies) async {
     try {
       await _firestore.collection('users').doc(userId).update({
-        'points': FieldValue.increment(-points),
+        'dustBunniesBalance': FieldValue.increment(-dustBunnies),
         'claimedRewards': FieldValue.arrayUnion([rewardId]),
       });
       return true;

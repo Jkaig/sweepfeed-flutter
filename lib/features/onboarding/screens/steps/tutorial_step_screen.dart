@@ -89,33 +89,28 @@ class _TutorialStepScreenState extends State<TutorialStepScreen>
 
   @override
   Widget build(BuildContext context) => OnboardingTemplate(
-      padding: EdgeInsets.zero,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-            child: Column(
-              children: [
-                Text(
-                  'Quick Tutorial',
-                  style: AppTextStyles.displaySmall.copyWith(
-                    color: AppColors.textWhite,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Learn how to win in 4 easy steps',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textLight,
-                  ),
-                ),
-              ],
+          Text(
+            'Quick Tutorial',
+            style: AppTextStyles.displaySmall.copyWith(
+              color: AppColors.textWhite,
+              fontWeight: FontWeight.bold,
             ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Learn how to win in 4 easy steps',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textLight,
+            ),
+            textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
 
           // Page indicator dots
           Row(
@@ -137,52 +132,49 @@ class _TutorialStepScreenState extends State<TutorialStepScreen>
             ),
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 32),
 
-          // Tutorial content
-          Expanded(
+          // Tutorial content - use fixed height instead of Expanded
+          SizedBox(
+            height: 400,
             child: PageView.builder(
               controller: _pageController,
               onPageChanged: (page) => setState(() => _currentPage = page),
               itemCount: _steps.length,
               itemBuilder: (context, index) => SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: _buildTutorialPage(_steps[index]),
-                ),
+                padding: EdgeInsets.zero,
+                child: _buildTutorialPage(_steps[index]),
+              ),
             ),
           ),
 
+          const SizedBox(height: 24),
+
           // Bottom buttons
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                OnboardingButton(
-                  text: _currentPage == _steps.length - 1
-                      ? 'Start Winning!'
-                      : 'Next',
-                  onPressed: _nextPage,
-                ),
-                if (widget.onSkip != null) ...[
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: widget.onSkip,
-                    child: Text(
-                      'Skip tutorial',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textLight,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+          OnboardingButton(
+            text: _currentPage == _steps.length - 1
+                ? 'Start Winning!'
+                : 'Next',
+            onPressed: _nextPage,
           ),
+          if (widget.onSkip != null) ...[
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: widget.onSkip,
+              child: Text(
+                'Skip tutorial',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textLight,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
 
   Widget _buildTutorialPage(_TutorialStep step) => Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         // Step icon with pulse animation
         AnimatedBuilder(
@@ -252,6 +244,8 @@ class _TutorialStepScreenState extends State<TutorialStepScreen>
 
         // Mock contests card with highlighted area
         _buildMockSweepstakesCard(step.highlightArea),
+        
+        const SizedBox(height: 24), // Extra spacing at bottom
       ],
     );
 
@@ -385,7 +379,7 @@ class _TutorialStepScreenState extends State<TutorialStepScreen>
                 // Metadata and enter button row
                 Row(
                   children: [
-                    // Points indicator with highlight - shows cute dust bunny!
+                    // DustBunnies indicator with highlight - shows cute dust bunny!
                     if (highlightArea == _HighlightArea.points)
                       AnimatedBuilder(
                         animation: _pulseAnimation,

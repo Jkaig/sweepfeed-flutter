@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/utils/logger.dart';
+import '../../../core/widgets/dustbunny_icon.dart';
 
 class CharityImpactCard extends StatefulWidget {
   const CharityImpactCard({
@@ -228,25 +229,26 @@ class _CharityImpactCardState extends State<CharityImpactCard> {
 
                   const SizedBox(height: 16),
 
-                  // Points earned
+                  // DustBunnies earned
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 12,),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.primary, AppColors.brandCyan],
-                      ),
+                      color: AppColors.brandCyan.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.brandCyan.withValues(alpha: 0.5),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.stars, color: Colors.white, size: 20),
+                        const DustBunnyIcon(size: 24),
                         const SizedBox(width: 8),
                         Text(
-                          '+${widget.pointsEarned} Sweep Points',
+                          '+${widget.pointsEarned} DustBunnies',
                           style: AppTextStyles.bodyMedium.copyWith(
-                            color: Colors.white,
+                            color: AppColors.brandCyan,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

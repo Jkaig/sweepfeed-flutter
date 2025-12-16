@@ -19,18 +19,17 @@ class EmptyContestState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.textMuted.withValues(alpha: 0.2)),
-              ),
-              child: const Icon(
-                Icons.search_off_rounded,
-                size: 48,
-                color: AppColors.textMuted,
-              ),
+            Image.asset(
+              'assets/images/dustbunnies/dustbunny_sad.png',
+              width: 64,
+              height: 64,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.search_off_rounded,
+                  size: 48,
+                  color: AppColors.textMuted,
+                );
+              },
             ),
             const SizedBox(height: 24),
             Text(

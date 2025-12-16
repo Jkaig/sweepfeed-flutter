@@ -45,6 +45,8 @@ class ContestFeedListSliver extends ConsumerWidget {
                 icon: Icons.celebration,
                 title: 'No Contests Found',
                 message: 'Try adjusting your filters or check back later!',
+                useDustBunny: true,
+                dustBunnyImage: 'assets/images/dustbunnies/dustbunny_sad.png',
               ),
             ),
           );

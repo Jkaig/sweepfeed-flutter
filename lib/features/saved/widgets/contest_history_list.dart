@@ -76,6 +76,8 @@ class _ContestHistoryListState extends ConsumerState<ContestHistoryList> {
               icon: Icons.history,
               title: 'No Entry History',
               message: "You haven't entered any contests yet.\nStart entering to see your history here!",
+              useDustBunny: true,
+              dustBunnyImage: 'assets/images/dustbunnies/dustbunny_icon.png',
             );
           }
 

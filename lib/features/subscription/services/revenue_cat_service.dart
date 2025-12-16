@@ -57,7 +57,13 @@ class RevenueCatService with ChangeNotifier {
       await Purchases.configure(configuration);
       _isConfigured = true;
 
-      await _updateCustomerInfo();
+      // Try to update customer info, but don't fail initialization if it fails
+      try {
+        await _updateCustomerInfo();
+      } catch (e) {
+        logger.w('Failed to update customer info during initialization (non-critical)', error: e);
+        // Still mark as configured - API key might be invalid but we don't want to crash
+      }
 
       Purchases.addCustomerInfoUpdateListener((customerInfo) {
         _customerInfo = customerInfo;
@@ -67,7 +73,16 @@ class RevenueCatService with ChangeNotifier {
 
       logger.i('RevenueCat initialized for user: $userId');
     } catch (e) {
+      // Don't mark as configured if initialization failed
+      _isConfigured = false;
       logger.e('Failed to initialize RevenueCat', error: e);
+      // If API key is invalid, log warning but don't crash
+      if (e.toString().contains('Invalid API Key') || 
+          e.toString().contains('credentials issue')) {
+        logger.w('RevenueCat API key is invalid or not configured. Subscription features will be unavailable.');
+      } else {
+        rethrow; // Re-throw other errors
+      }
     }
   }
 
@@ -77,6 +92,11 @@ class RevenueCatService with ChangeNotifier {
   }
 
   Future<Offerings?> getOfferings() async {
+    if (!_isConfigured) {
+      logger.w('RevenueCat not configured. Cannot get offerings.');
+      return null;
+    }
+    
     try {
       final offerings = await Purchases.getOfferings();
       if (offerings.current == null) {
@@ -125,6 +145,13 @@ class RevenueCatService with ChangeNotifier {
   Future<Package?> getYearlyPackage() async => getPackage('yearly');
 
   Future<bool> purchasePackage(Package package) async {
+    if (!_isConfigured) {
+      logger.e('RevenueCat not configured. Cannot purchase package.');
+      throw Exception(
+        'Subscription service not ready. Please try again in a moment.',
+      );
+    }
+    
     try {
       final customerInfo = await Purchases.purchasePackage(package);
       _customerInfo = customerInfo;
@@ -190,6 +217,11 @@ class RevenueCatService with ChangeNotifier {
   }
 
   Future<bool> restorePurchases() async {
+    if (!_isConfigured) {
+      logger.w('RevenueCat not configured. Cannot restore purchases.');
+      return false;
+    }
+    
     try {
       final customerInfo = await Purchases.restorePurchases();
       _customerInfo = customerInfo;

@@ -517,7 +517,7 @@ class ContestService {
           .where('status', isEqualTo: 'active')
           .where('endDate', isGreaterThan: Timestamp.now())
           .orderBy('endDate', descending: false) // Use indexed field
-          .limit(50) // Reduced from 100 - fetch less, filter more efficiently
+          .limit(100) // Expanded to 100 for better recall. For production scaling, migrate to Algolia/Elasticsearch.
           .get()
           .timeout(
             const Duration(seconds: 30),

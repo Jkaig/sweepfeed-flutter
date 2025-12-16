@@ -45,6 +45,7 @@ class _CharityImpactStepScreenState extends State<CharityImpactStepScreen>
   Widget build(BuildContext context) => OnboardingTemplate(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Main icon - heart with money symbol
           const Stack(
@@ -79,7 +80,7 @@ class _CharityImpactStepScreenState extends State<CharityImpactStepScreen>
 
           // Description
           Text(
-            'Every contest entry supports verified charities through Every.org',
+            "When you watch ads, 30% of that revenue goes to verified charities. You don't pay anything - we redirect ad revenue.",
             style: AppTextStyles.bodyLarge.copyWith(
               color: AppColors.textLight,
               height: 1.5,
@@ -210,17 +211,39 @@ class _CharityImpactStepScreenState extends State<CharityImpactStepScreen>
             onPressed: widget.onNext,
           ),
 
-          // No thanks button
+          // Prominent No Thanks button
           if (widget.onSkipCharity != null) ...[
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: widget.onSkipCharity,
-              child: Text(
-                'No thanks, skip charity selection',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.textLight,
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: widget.onSkipCharity,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: BorderSide(
+                    color: AppColors.textLight.withValues(alpha: 0.5),
+                    width: 2,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  'No Thanks - Keep All Ad Revenue',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: AppColors.textWhite,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You can always change this later in settings',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textMuted,
+              ),
+              textAlign: TextAlign.center,
             ),
           ],
         ],

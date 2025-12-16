@@ -193,6 +193,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         icon: Icons.search_off,
         title: 'Search Term Too Short',
         message: 'Please enter at least 3 characters to search.',
+        useDustBunny: true,
+        dustBunnyImage: 'assets/images/dustbunnies/dustbunny_icon.png',
       );
     }
 
@@ -201,6 +203,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         icon: Icons.search_off,
         title: 'No Results Found',
         message: 'No contests found for "$_searchQuery".\nTry a different search term.',
+        useDustBunny: true,
+        dustBunnyImage: 'assets/images/dustbunnies/dustbunny_sad.png',
       );
     }
 

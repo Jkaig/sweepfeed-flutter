@@ -208,7 +208,7 @@ class _CharitySelectionStepScreenState
 
           // Multi-select hint
           Text(
-            'Your ad revenue will be split among your selections',
+            '30% of ad revenue from your ad views will go to your selected charities',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textMuted,
               fontStyle: FontStyle.italic,
@@ -271,6 +271,48 @@ class _CharitySelectionStepScreenState
               isPrimary: selectedCharities.isNotEmpty,
             ),
           ),
+
+          // Prominent No Thanks button
+          if (widget.onSkip != null) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: widget.onSkip,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: BorderSide(
+                      color: AppColors.textLight.withValues(alpha: 0.5),
+                      width: 2,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'No Thanks - Keep All Ad Revenue',
+                    style: AppTextStyles.titleMedium.copyWith(
+                      color: AppColors.textWhite,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                'You can always change this later in settings',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textMuted,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
 
           const SizedBox(height: 24),
         ],

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/services/dust_bunnies_service.dart';
+import '../../../core/models/user_model.dart';
+import '../../../core/services/dust_bunnies_service.dart' show LeaderboardEntry;
+import '../../../core/providers/providers.dart';
+import '../../../core/widgets/loading_indicator.dart';
 
 class LeaderboardScreen extends ConsumerWidget {
   const LeaderboardScreen({super.key});
@@ -58,5 +61,3 @@ final leaderboardProvider = FutureProvider<List<LeaderboardEntry>>((ref) async {
   final dustBunniesService = ref.watch(dustBunniesServiceProvider);
   return dustBunniesService.getLeaderboard();
 });
-
-final dustBunniesServiceProvider = Provider<DustBunniesService>(DustBunniesService.new);

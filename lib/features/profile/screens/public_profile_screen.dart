@@ -130,10 +130,11 @@ class PublicProfileScreen extends ConsumerWidget {
                                 AppColors.brandCyan,
                               ),
                               _buildQuickStat(
-                                'Points',
-                                '${userProfile.points}',
+                                'DustBunnies',
+                                '${userProfile.dustBunnies}',
                                 Icons.stars,
                                 AppColors.accent,
+                                imagePath: 'assets/images/dustbunnies/dustbunny_icon.png',
                               ),
                               _buildQuickStat(
                                 'Streak',
@@ -217,7 +218,7 @@ class PublicProfileScreen extends ConsumerWidget {
   }
 
   Widget _buildQuickStat(
-      String label, String value, IconData icon, Color color,) => Column(
+      String label, String value, IconData icon, Color color, {String? imagePath}) => Column(
       children: [
         Container(
           padding: const EdgeInsets.all(12),
@@ -229,7 +230,14 @@ class PublicProfileScreen extends ConsumerWidget {
               width: 1.5,
             ),
           ),
-          child: Icon(icon, color: color, size: 24),
+          child: imagePath != null
+              ? Image.asset(
+                  imagePath,
+                  width: 24,
+                  height: 24,
+                  errorBuilder: (context, error, stackTrace) => Icon(icon, color: color, size: 24),
+                )
+              : Icon(icon, color: color, size: 24),
         ),
         const SizedBox(height: 8),
         Text(

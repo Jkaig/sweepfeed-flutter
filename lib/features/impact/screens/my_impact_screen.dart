@@ -234,8 +234,9 @@ class MyImpactScreen extends ConsumerWidget {
               child: _buildStatCard(
                 icon: Icons.stars,
                 value: '$points',
-                label: 'Total Points',
+                label: 'Total DustBunnies',
                 color: AppColors.brandCyan,
+                imagePath: 'assets/images/dustbunnies/dustbunny_icon.png',
               ),
             ),
             const SizedBox(width: 12),
@@ -284,6 +285,7 @@ class MyImpactScreen extends ConsumerWidget {
     required String value,
     required String label,
     required Color color,
+    String? imagePath,
   }) => Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -293,7 +295,14 @@ class MyImpactScreen extends ConsumerWidget {
       ),
       child: Column(
         children: [
-          Icon(icon, color: color, size: 32),
+          imagePath != null
+              ? Image.asset(
+                  imagePath,
+                  width: 32,
+                  height: 32,
+                  errorBuilder: (context, error, stackTrace) => Icon(icon, color: color, size: 32),
+                )
+              : Icon(icon, color: color, size: 32),
           const SizedBox(height: 8),
           Text(
             value,

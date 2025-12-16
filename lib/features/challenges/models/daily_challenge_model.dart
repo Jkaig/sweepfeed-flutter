@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+
+import 'package:flutter/material.dart';
 
 /// Represents a challenge definition stored in Firestore
 @immutable
@@ -191,6 +192,40 @@ enum ChallengeType {
       (type) => type.value == value,
       orElse: () => ChallengeType.enterContest,
     );
+
+  IconData get icon {
+    switch (this) {
+      case ChallengeType.enterContest:
+        return Icons.login;
+      case ChallengeType.saveContest:
+        return Icons.favorite_border;
+      case ChallengeType.shareContest:
+        return Icons.share;
+      case ChallengeType.watchAd:
+        return Icons.play_circle_outline;
+      case ChallengeType.completeProfile:
+        return Icons.person_outline;
+      case ChallengeType.dailyLogin:
+        return Icons.calendar_today;
+    }
+  }
+
+  Widget buildIcon(Color color, double size) {
+    switch (this) {
+      case ChallengeType.enterContest:
+        return Icon(Icons.login, color: color, size: size);
+      case ChallengeType.saveContest:
+        return Icon(Icons.favorite_border, color: color, size: size);
+      case ChallengeType.shareContest:
+        return Icon(Icons.share, color: color, size: size);
+      case ChallengeType.watchAd:
+        return Icon(Icons.play_circle_outline, color: color, size: size);
+      case ChallengeType.completeProfile:
+        return Icon(Icons.person_outline, color: color, size: size);
+      case ChallengeType.dailyLogin:
+        return Icon(Icons.calendar_today, color: color, size: size);
+    }
+  }
 }
 
 /// Challenge difficulty levels

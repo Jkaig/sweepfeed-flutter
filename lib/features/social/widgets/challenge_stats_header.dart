@@ -114,8 +114,8 @@ class ChallengeStatsHeader extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _buildStatItem(
-                  icon: Icons.star,
-                  label: 'Total SP',
+                  icon: Icons.auto_awesome, // Using sparkle/magic icon for DustBunnies
+                  label: 'Total DB',
                   value: _formatNumber(totalSP),
                   color: const Color(0xFF00E5FF),
                 ),

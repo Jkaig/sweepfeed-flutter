@@ -208,7 +208,22 @@ final authStateChangesProvider = StreamProvider<User?>((ref) {
 
 /// Provides RevenueCatService
 final revenueCatServiceProvider =
-    ChangeNotifierProvider<RevenueCatService>(RevenueCatService.new);
+    ChangeNotifierProvider<RevenueCatService>((ref) {
+      final service = RevenueCatService(ref);
+      
+      // Auto-initialize RevenueCat when user logs in
+      final authState = ref.watch(authStateChangesProvider);
+      authState.whenData((user) {
+        if (user != null) {
+          // User logged in - initialize RevenueCat
+          service.initialize(user.uid).catchError((e) {
+            logger.w('Failed to initialize RevenueCat for user ${user.uid}: $e');
+          });
+        }
+      });
+      
+      return service;
+    });
 
 /// Provides a ChangeNotifier for managing subscription-related logic.
 final subscriptionServiceProvider =
@@ -618,6 +633,31 @@ final savedFiltersProvider = StreamProvider<List<FilterSet>>((ref) {
     return profileService.getFilterSets(user.uid);
   }
   return Stream.value([]);
+});
+
+/// StreamProvider for real-time DustBunnies balance
+final userDustBunniesBalanceProvider = StreamProvider.family<int, String>((ref, userId) {
+  if (userId.isEmpty) {
+    return Stream.value(0);
+  }
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(userId)
+      .snapshots()
+      .map((snapshot) {
+    if (!snapshot.exists || snapshot.data() == null) {
+      return 0;
+    }
+    final data = snapshot.data()!;
+    final dbData = data['dustBunniesSystem'] as Map<String, dynamic>? ??
+        data['sweepPointsSystem'] as Map<String, dynamic>? ??
+        data['xpSystem'] as Map<String, dynamic>? ??
+        {};
+    return (dbData['currentDB'] as num?)?.toInt() ??
+        (dbData['currentSP'] as num?)?.toInt() ??
+        (dbData['currentXP'] as num?)?.toInt() ??
+        0;
+  });
 });
 
 final dailyChallengeServiceProvider =

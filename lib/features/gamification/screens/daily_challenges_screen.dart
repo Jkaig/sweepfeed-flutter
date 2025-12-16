@@ -52,17 +52,17 @@ class DailyChallengesScreen extends ConsumerWidget {
                   Icon(
                     Icons.assignment,
                     size: 64,
-                    color: AppColors.primaryMedium,
+                    color: AppColors.textMuted,
                   ),
                   SizedBox(height: 16),
                   Text(
                     'No challenges available today',
-                    style: TextStyle(fontSize: 18),
+                    style: TextStyle(fontSize: 18, color: AppColors.textLight),
                   ),
                   SizedBox(height: 8),
                   Text(
                     'Check back tomorrow for new challenges!',
-                    style: TextStyle(color: AppColors.primaryMedium),
+                    style: TextStyle(color: AppColors.textMuted),
                   ),
                 ],
               ),
@@ -93,12 +93,12 @@ class DailyChallengesScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               const Text(
                 'Could not load challenges',
-                style: TextStyle(fontSize: 18),
+                style: TextStyle(fontSize: 18, color: AppColors.textLight),
               ),
               const SizedBox(height: 8),
               Text(
                 error.toString(),
-                style: const TextStyle(color: AppColors.primaryMedium),
+                style: const TextStyle(color: AppColors.textMuted),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
@@ -114,6 +114,8 @@ class DailyChallengesScreen extends ConsumerWidget {
       ),
     );
   }
+
+
 }
 
 class _ChallengeCard extends ConsumerStatefulWidget {
@@ -151,11 +153,9 @@ class _ChallengeCardState extends ConsumerState<_ChallengeCard> {
           children: [
             Row(
               children: [
-                Icon(
-                  IconData(definition.iconCodePoint,
-                      fontFamily: 'MaterialIcons',),
-                  size: 40,
-                  color: isComplete ? AppColors.accent : Colors.white,
+                ChallengeType.fromString(definition.type).buildIcon(
+                  isComplete ? AppColors.accent : Colors.white,
+                  40,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -364,3 +364,5 @@ class _ChallengeCardState extends ConsumerState<_ChallengeCard> {
     ).animate().fadeIn(duration: 300.ms).slideX(begin: 0.1, end: 0);
   }
 }
+
+

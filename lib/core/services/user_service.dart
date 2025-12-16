@@ -63,5 +63,16 @@ class UserService {
         .collection('users')
         .doc(userId)
         .set({'onboardingCompleted': true}, SetOptions(merge: true));
+    
+    // Verify the update was successful
+    final verifyDoc = await _firestore.collection('users').doc(userId).get();
+    final verified = verifyDoc.data()?['onboardingCompleted'] as bool? ?? false;
+    
+    if (!verified) {
+      logger.e('Failed to save onboardingCompleted flag for user $userId');
+      throw Exception('Failed to save onboarding completion status');
+    }
+    
+    logger.i('Successfully saved onboardingCompleted=true for user $userId');
   }
 }

@@ -39,6 +39,8 @@ class DailyChecklist extends ConsumerWidget {
         title: 'All Caught Up!',
         message:
             'No checklist items for today.\nComplete daily tasks to earn bonus entries.',
+        useDustBunny: true,
+        dustBunnyImage: 'assets/images/dustbunnies/dustbunny_happy.png',
       );
     }
 
